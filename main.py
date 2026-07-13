@@ -1,4 +1,5 @@
 """声明式本地视频播放器 — flet 0.85.3 + flet-video"""
+
 import json
 from pathlib import Path
 
@@ -14,21 +15,32 @@ from flet_video import (
 # ═══════════════════════════════════════════════════════════
 #  配色系统 — 专业蓝色 · 高级科技风（暗色主题）
 # ═══════════════════════════════════════════════════════════
-C_PRIMARY = "#2F80ED"   # 主色
-C_HOVER = "#4A90F5"     # 悬停色
-C_BG_DARK = "#0E131B"   # 最深背景
+C_PRIMARY = "#2F80ED"  # 主色
+C_HOVER = "#4A90F5"  # 悬停色
+C_BG_DARK = "#0E131B"  # 最深背景
 C_BG_PANEL = "#161E2E"  # 面板背景
-C_BG_ITEM = "#1E283A"   # 列表项背景
-C_BG_ACTIVE = "#1C3A5E" # 选中项背景
+C_BG_ITEM = "#1E283A"  # 列表项背景
+C_BG_ACTIVE = "#1C3A5E"  # 选中项背景
 C_BG_HOVER = "#1B2436"  # 悬停背景
-C_BORDER = "#2A3548"    # 描边色
-C_TEXT = "#E8EDF5"      # 主文字
+C_BORDER = "#2A3548"  # 描边色
+C_TEXT = "#E8EDF5"  # 主文字
 C_TEXT_SUB = "#8B95A8"  # 次文字
-C_RED = "#FF5252"       # 危险色
+C_RED = "#FF5252"  # 危险色
 
 VIDEO_EXTS = {
-    ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv",
-    ".webm", ".m4v", ".mpg", ".mpeg", ".ts", ".3gp", ".m2ts",
+    ".mp4",
+    ".avi",
+    ".mkv",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".m4v",
+    ".mpg",
+    ".mpeg",
+    ".ts",
+    ".3gp",
+    ".m2ts",
 }
 RECENTS_FILE = Path.home() / ".cs_video_player_recent.json"
 SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
@@ -123,7 +135,9 @@ def scan_videos(folder: str) -> list[dict]:
     try:
         for f in Path(folder).iterdir():
             if f.is_file() and f.suffix.lower() in VIDEO_EXTS:
-                items.append({"path": str(f), "title": f.stem, "size": f.stat().st_size})
+                items.append(
+                    {"path": str(f), "title": f.stem, "size": f.stat().st_size}
+                )
     except Exception:
         pass
     items.sort(key=lambda x: x["title"].lower())
@@ -246,6 +260,18 @@ def App():
     def on_complete(e):
         play_next()
 
+    # ── 切换视频时更新窗口标题 ──
+    page = ft.context.page
+
+    def _sync_title():
+        if playlist and 0 <= current_index < len(playlist):
+            page.title = f"{playlist[current_index]['title']} - CS Video Player"
+        else:
+            page.title = "CS Video Player"
+        page.update()
+
+    ft.use_effect(_sync_title, dependencies=[play_nonce])
+
     # ── 排序后的显示列表（保留原始索引） ──
     if sort_key == "name":
         display = sorted(enumerate(playlist), key=lambda x: x[1]["title"].lower())
@@ -315,7 +341,9 @@ def Sidebar(
             border_radius=6,
             ink=True,
             on_click=on_click,
-            on_hover=lambda e: set_hovered_idx(-2) if str(e.data) == "true" else set_hovered_idx(-1),
+            on_hover=lambda e: (
+                set_hovered_idx(-2) if str(e.data) == "true" else set_hovered_idx(-1)
+            ),
         )
 
     # ── 近期视频菜单项 ──
@@ -373,7 +401,9 @@ def Sidebar(
                                     size=12,
                                     max_lines=1,
                                     overflow=ft.TextOverflow.ELLIPSIS,
-                                    weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.W_400,
+                                    weight=ft.FontWeight.W_600
+                                    if is_active
+                                    else ft.FontWeight.W_400,
                                 ),
                                 ft.Text(
                                     human_size(item["size"]),
@@ -392,7 +422,11 @@ def Sidebar(
                 border_radius=4,
                 ink=True,
                 on_click=lambda e: on_play(orig_idx),
-                on_hover=lambda e: set_hovered_idx(seq) if str(e.data) == "true" else set_hovered_idx(-1),
+                on_hover=lambda e: (
+                    set_hovered_idx(seq)
+                    if str(e.data) == "true"
+                    else set_hovered_idx(-1)
+                ),
             ),
             secondary_items=[
                 ft.PopupMenuItem(
@@ -421,17 +455,20 @@ def Sidebar(
                     ),
                     padding=ft.Padding.symmetric(horizontal=16, vertical=14),
                 ),
-
                 # ── 菜单区 ──
                 ft.Container(
                     content=ft.Column(
                         controls=[
                             _menu_btn(ft.Icons.VIDEO_FILE, "打开文件", on_open_file),
-                            _menu_btn(ft.Icons.FOLDER_OPEN, "打开文件夹", on_open_folder),
+                            _menu_btn(
+                                ft.Icons.FOLDER_OPEN, "打开文件夹", on_open_folder
+                            ),
                             ft.PopupMenuButton(
                                 content=ft.Row(
                                     controls=[
-                                        ft.Icon(ft.Icons.HISTORY, size=18, color=C_PRIMARY),
+                                        ft.Icon(
+                                            ft.Icons.HISTORY, size=18, color=C_PRIMARY
+                                        ),
                                         ft.Text("近期视频", color=C_TEXT, size=13),
                                     ],
                                     spacing=8,
@@ -445,18 +482,22 @@ def Sidebar(
                     ),
                     padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                 ),
-
                 # ── 分割线 ──
                 ft.Container(
-                    height=1, bgcolor=C_BORDER,
+                    height=1,
+                    bgcolor=C_BORDER,
                     margin=ft.Padding.symmetric(horizontal=12, vertical=4),
                 ),
-
                 # ── 排序栏 ──
                 ft.Container(
                     content=ft.Row(
                         controls=[
-                            ft.Text("播放列表", color=C_TEXT_SUB, size=11, weight=ft.FontWeight.W_600),
+                            ft.Text(
+                                "播放列表",
+                                color=C_TEXT_SUB,
+                                size=11,
+                                weight=ft.FontWeight.W_600,
+                            ),
                             ft.Container(expand=True),
                             *[_sort_btn(k) for k in ("default", "name", "size")],
                         ],
@@ -464,7 +505,6 @@ def Sidebar(
                     ),
                     padding=ft.Padding.symmetric(horizontal=12, vertical=6),
                 ),
-
                 # ── 播放列表 ──
                 ft.Container(
                     content=ft.ListView(
@@ -540,6 +580,7 @@ def PlayerArea(
                 set_is_playing(True)
 
         import asyncio
+
         asyncio.ensure_future(_jump())
 
     ft.use_effect(_do_play, dependencies=[play_nonce])
@@ -593,6 +634,7 @@ def PlayerArea(
         seeking_ref.current = False
         set_position_ms(pos)
         import asyncio
+
         asyncio.ensure_future(_do_seek(pos))
 
     async def _vol_change(e):
@@ -693,7 +735,6 @@ def PlayerArea(
                 ],
                 expand=True,
             ),
-
             # ── 控制条 ──
             ft.Container(
                 content=ft.Column(
@@ -750,7 +791,9 @@ def PlayerArea(
                                     enabled=current_index > 0,
                                 ),
                                 _icon_btn(
-                                    ft.Icons.PAUSE if is_playing else ft.Icons.PLAY_ARROW,
+                                    ft.Icons.PAUSE
+                                    if is_playing
+                                    else ft.Icons.PLAY_ARROW,
                                     _toggle_play,
                                     "暂停/播放",
                                     enabled=has_video,
@@ -775,7 +818,9 @@ def PlayerArea(
                                         ft.PopupMenuItem(
                                             content=ft.Text(
                                                 _rate_label(s),
-                                                color=C_PRIMARY if s == rate else C_TEXT,
+                                                color=C_PRIMARY
+                                                if s == rate
+                                                else C_TEXT,
                                                 size=12,
                                             ),
                                             icon=ft.Icons.CHECK if s == rate else None,
@@ -789,7 +834,8 @@ def PlayerArea(
                                 ft.Container(expand=True),
                                 # 音量
                                 _icon_btn(
-                                    ft.Icons.VOLUME_OFF if muted or volume == 0
+                                    ft.Icons.VOLUME_OFF
+                                    if muted or volume == 0
                                     else ft.Icons.VOLUME_UP,
                                     _toggle_mute,
                                     "静音",
@@ -808,7 +854,8 @@ def PlayerArea(
                                 ft.Container(width=8),
                                 # 全屏
                                 _icon_btn(
-                                    ft.Icons.FULLSCREEN if not is_fullscreen
+                                    ft.Icons.FULLSCREEN
+                                    if not is_fullscreen
                                     else ft.Icons.FULLSCREEN_EXIT,
                                     _toggle_fullscreen,
                                     "全屏",
