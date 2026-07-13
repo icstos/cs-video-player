@@ -52,18 +52,31 @@ def to_uri(p: str) -> str:
     return Path(p).resolve().as_uri()
 
 
+def _duration_dict_to_ms(d: dict) -> int:
+    """将 Duration dict 各字段累加为总毫秒数"""
+    return (
+        d.get("days", 0) * 86_400_000
+        + d.get("hours", 0) * 3_600_000
+        + d.get("minutes", 0) * 60_000
+        + d.get("seconds", 0) * 1_000
+        + d.get("milliseconds", 0)
+    )
+
+
 def parse_ms(data) -> int:
-    """防御性解析事件数据为毫秒"""
+    """解析事件数据为总毫秒数（支持 Duration 对象 / dict / int / JSON str）"""
     if data is None:
         return 0
+    if isinstance(data, ft.Duration):
+        return data.in_milliseconds
     if isinstance(data, dict):
-        return int(data.get("milliseconds", 0))
+        return _duration_dict_to_ms(data)
     if isinstance(data, (int, float)):
         return int(data)
     if isinstance(data, str):
         try:
             obj = json.loads(data)
-            return int(obj.get("milliseconds", 0)) if isinstance(obj, dict) else int(obj)
+            return _duration_dict_to_ms(obj) if isinstance(obj, dict) else int(obj)
         except (json.JSONDecodeError, ValueError, TypeError):
             return 0
     return 0
@@ -508,10 +521,11 @@ def PlayerArea(
     rate, set_rate = ft.use_state(1.0)
     muted, set_muted = ft.use_state(False)
     is_fullscreen, set_is_fullscreen = ft.use_state(False)
-    seeking, set_seeking = ft.use_state(False)
-    seek_pos, set_seek_pos = ft.use_state(0)
 
     video_ref = ft.use_ref()
+    # 拖拽状态用 ref 跟踪：立即生效、不触发重渲染、避免闭包过期
+    seeking_ref = ft.use_ref(False)
+    seek_pos_ref = ft.use_ref(0)
 
     # ── 播放请求：nonce 变化时跳转 + 播放 ──
     def _do_play():
@@ -535,7 +549,7 @@ def PlayerArea(
         set_is_playing(True)
 
     def _on_pos(e):
-        if not seeking:
+        if not seeking_ref.current:
             set_position_ms(parse_ms(e.data))
 
     def _on_dur(e):
@@ -558,23 +572,34 @@ def PlayerArea(
     async def _do_seek(pos: int):
         v = video_ref.current
         if v:
-            await v.seek(pos)
+            await v.seek(ft.Duration(milliseconds=pos))
             set_position_ms(pos)
 
     def _on_slider_start(e):
-        set_seeking(True)
-        set_seek_pos(position_ms)
+        seeking_ref.current = True
+        seek_pos_ref.current = position_ms
 
     def _on_slider_change(e):
-        set_seek_pos(int(e.control.value))
+        try:
+            seek_pos_ref.current = int(float(e.data))
+        except (TypeError, ValueError):
+            pass
 
     def _on_slider_end(e):
-        set_seeking(False)
+        try:
+            pos = int(float(e.data))
+        except (TypeError, ValueError):
+            pos = seek_pos_ref.current
+        seeking_ref.current = False
+        set_position_ms(pos)
         import asyncio
-        asyncio.ensure_future(_do_seek(int(e.control.value)))
+        asyncio.ensure_future(_do_seek(pos))
 
     async def _vol_change(e):
-        val = float(e.control.value)
+        try:
+            val = float(e.data)
+        except (TypeError, ValueError):
+            return
         set_volume(val)
         if muted and val > 0:
             set_muted(False)
@@ -599,7 +624,6 @@ def PlayerArea(
         else []
     )
 
-    slider_value = seek_pos if seeking else position_ms
     slider_max = max(duration_ms, 1)
 
     # ── 控制条按钮 ──
@@ -687,14 +711,14 @@ def PlayerArea(
                         ft.Row(
                             controls=[
                                 ft.Text(
-                                    fmt_time(slider_value),
+                                    fmt_time(position_ms),
                                     color=C_TEXT_SUB,
                                     size=11,
                                 ),
                                 ft.Slider(
                                     min=0,
                                     max=slider_max,
-                                    value=slider_value,
+                                    value=position_ms,
                                     active_color=C_PRIMARY,
                                     inactive_color=C_BORDER,
                                     thumb_color=C_PRIMARY,
