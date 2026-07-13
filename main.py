@@ -642,31 +642,35 @@ def PlayerArea(
             # ── 视频画面 ──
             ft.Stack(
                 controls=[
-                    ft.Container(
-                        content=Video(
-                            ref=video_ref,
-                            playlist=video_playlist,
-                            playlist_mode=PlaylistMode.NONE,
-                            controls={
-                                VideoControlsMode.NORMAL: None,
-                                VideoControlsMode.FULLSCREEN: _fullscreen_controls(),
-                            },
-                            fullscreen=is_fullscreen,
-                            volume=volume,
-                            playback_rate=rate,
-                            muted=muted,
-                            fill_color=C_BG_DARK,
-                            on_load=_on_load,
-                            on_track_change=on_track_change,
-                            on_complete=on_complete,
-                            on_position_change=_on_pos,
-                            on_duration_change=_on_dur,
-                            on_enter_fullscreen=_on_enter_fs,
-                            on_exit_fullscreen=_on_exit_fs,
+                    ft.GestureDetector(
+                        content=ft.Container(
+                            content=Video(
+                                ref=video_ref,
+                                playlist=video_playlist,
+                                playlist_mode=PlaylistMode.NONE,
+                                controls={
+                                    VideoControlsMode.NORMAL: None,
+                                    VideoControlsMode.FULLSCREEN: _fullscreen_controls(),
+                                },
+                                fullscreen=is_fullscreen,
+                                volume=volume,
+                                playback_rate=rate,
+                                muted=muted,
+                                fill_color=C_BG_DARK,
+                                on_load=_on_load,
+                                on_track_change=on_track_change,
+                                on_complete=on_complete,
+                                on_position_change=_on_pos,
+                                on_duration_change=_on_dur,
+                                on_enter_fullscreen=_on_enter_fs,
+                                on_exit_fullscreen=_on_exit_fs,
+                                expand=True,
+                            ),
                             expand=True,
+                            bgcolor=C_BG_DARK,
                         ),
+                        on_double_tap=_toggle_fullscreen,
                         expand=True,
-                        bgcolor=C_BG_DARK,
                     ),
                     # ── 空状态占位 ──
                     ft.Container(
