@@ -168,6 +168,7 @@ def App():
     recents, set_recents = ft.use_state(load_recents)
     sort_key, set_sort_key = ft.use_state("default")
     play_nonce, set_play_nonce = ft.use_state(0)
+    auto_play_next, set_auto_play_next = ft.use_state(True)
 
     # FilePicker 作为 Service 在首次渲染时自动注册
     picker_ref = ft.use_ref(lambda: ft.FilePicker())
@@ -253,12 +254,15 @@ def App():
 
     # ── Video 事件回调 ──
     def on_track_change(e):
+        if not auto_play_next:
+            return
         idx = parse_idx(e.data)
         if 0 <= idx < len(playlist):
             set_current_index(idx)
 
     def on_complete(e):
-        play_next()
+        if auto_play_next:
+            play_next()
 
     # ── 切换视频时更新窗口标题 ──
     page = ft.context.page
@@ -298,10 +302,12 @@ def App():
                 playlist=playlist,
                 current_index=current_index,
                 play_nonce=play_nonce,
+                auto_play_next=auto_play_next,
                 on_track_change=on_track_change,
                 on_complete=on_complete,
                 on_prev=play_prev,
                 on_next=play_next,
+                on_toggle_auto_play_next=lambda e: set_auto_play_next(not auto_play_next),
             ),
         ],
         expand=True,
@@ -548,10 +554,12 @@ def PlayerArea(
     playlist: list,
     current_index: int,
     play_nonce: int,
+    auto_play_next: bool,
     on_track_change,
     on_complete,
     on_prev,
     on_next,
+    on_toggle_auto_play_next,
 ):
     # ── 局部状态（高频更新隔离在 PlayerArea 内） ──
     position_ms, set_position_ms = ft.use_state(0)
@@ -566,6 +574,8 @@ def PlayerArea(
     # 拖拽状态用 ref 跟踪：立即生效、不触发重渲染、避免闭包过期
     seeking_ref = ft.use_ref(False)
     seek_pos_ref = ft.use_ref(0)
+    pending_restore_ref = ft.use_ref(None)
+    auto_play_toggle_init_ref = ft.use_ref(True)
 
     # ── 播放请求：nonce 变化时跳转 + 播放 ──
     def _do_play():
@@ -575,7 +585,7 @@ def PlayerArea(
         async def _jump():
             v = video_ref.current
             if v and 0 <= current_index < len(playlist):
-                await v.jump_to(current_index)
+                await v.jump_to(0 if not auto_play_next else current_index)
                 await v.play()
                 set_is_playing(True)
 
@@ -585,9 +595,66 @@ def PlayerArea(
 
     ft.use_effect(_do_play, dependencies=[play_nonce])
 
+    def _on_auto_play_toggle():
+        if auto_play_toggle_init_ref.current:
+            auto_play_toggle_init_ref.current = False
+            return
+        if not playlist or not (0 <= current_index < len(playlist)):
+            return
+        pending_restore_ref.current = (position_ms, is_playing)
+
+        async def _restore_after_toggle():
+            import asyncio
+
+            await asyncio.sleep(0.15)
+            pending = pending_restore_ref.current
+            if not pending:
+                return
+            pending_restore_ref.current = None
+            v = video_ref.current
+            if not v:
+                return
+            pos, was_playing = pending
+            if pos > 0:
+                await v.seek(ft.Duration(milliseconds=pos))
+            if was_playing:
+                await v.play()
+            set_is_playing(was_playing)
+
+        import asyncio
+
+        asyncio.ensure_future(_restore_after_toggle())
+
+    ft.use_effect(_on_auto_play_toggle, dependencies=[auto_play_next])
+
     # ── Video 事件处理 ──
     def _on_load(e):
+        pending = pending_restore_ref.current
+        if pending:
+            pos, was_playing = pending
+            pending_restore_ref.current = None
+
+            async def _restore():
+                v = video_ref.current
+                if not v:
+                    return
+                if pos > 0:
+                    await v.seek(ft.Duration(milliseconds=pos))
+                if was_playing:
+                    await v.play()
+                set_is_playing(was_playing)
+
+            import asyncio
+
+            asyncio.ensure_future(_restore())
+            return
         set_is_playing(True)
+
+    def _on_complete(e):
+        if auto_play_next:
+            on_complete(e)
+        else:
+            set_is_playing(False)
 
     def _on_pos(e):
         if not seeking_ref.current:
@@ -659,12 +726,19 @@ def PlayerArea(
     has_video = bool(playlist) and 0 <= current_index < len(playlist)
     title = playlist[current_index]["title"] if has_video else ""
 
-    # ── Video 控件 ──
-    video_playlist = (
-        [VideoMedia(resource=to_uri(item["path"])) for item in playlist]
-        if playlist
-        else []
-    )
+    # ── Video 控件：关闭自动播放时仅传入当前项，避免底层播放器自动切歌 ──
+    if auto_play_next:
+        video_playlist = (
+            [VideoMedia(resource=to_uri(item["path"])) for item in playlist]
+            if playlist
+            else []
+        )
+    else:
+        video_playlist = (
+            [VideoMedia(resource=to_uri(playlist[current_index]["path"]))]
+            if has_video
+            else []
+        )
 
     slider_max = max(duration_ms, 1)
 
@@ -701,7 +775,7 @@ def PlayerArea(
                                 fill_color=C_BG_DARK,
                                 on_load=_on_load,
                                 on_track_change=on_track_change,
-                                on_complete=on_complete,
+                                on_complete=_on_complete,
                                 on_position_change=_on_pos,
                                 on_duration_change=_on_dur,
                                 on_enter_fullscreen=_on_enter_fs,
@@ -804,6 +878,13 @@ def PlayerArea(
                                     lambda e: on_next(),
                                     "下一个",
                                     enabled=current_index < len(playlist) - 1,
+                                ),
+                                _icon_btn(
+                                    ft.Icons.PLAYLIST_PLAY,
+                                    on_toggle_auto_play_next,
+                                    "自动播放下一个" if auto_play_next else "已关闭自动播放下一个",
+                                    enabled=has_video,
+                                    color=C_PRIMARY if auto_play_next else C_TEXT_SUB,
                                 ),
                                 ft.Container(width=12),
                                 # 倍速
