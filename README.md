@@ -1,5 +1,7 @@
 # CS Video Player
 
+[中文](README.zh-CN.md) | English
+
 A Windows desktop local video player built with Python 3.12+, Flet 0.86.5, and flet-video.
 Inspired by PotPlayer's interaction design and VLC's format versatility.
 
