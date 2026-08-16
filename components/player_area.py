@@ -128,10 +128,12 @@ def PlayerArea(
         on_duration_change(ms)
 
     def _on_enter_fs(e):
-        on_toggle_fullscreen()
+        if not state.is_fullscreen:
+            on_toggle_fullscreen()
 
     def _on_exit_fs(e):
-        on_toggle_fullscreen()
+        if state.is_fullscreen:
+            on_toggle_fullscreen()
 
     async def _toggle_play():
         await engine.play_or_pause()
@@ -240,7 +242,9 @@ def PlayerArea(
                             expand=True,
                             bgcolor=C_BG_DARKEST,
                         ),
-                        on_double_tap=lambda e: on_toggle_fullscreen(),
+                        on_double_tap=lambda e: (
+                            on_toggle_fullscreen() if not state.is_fullscreen else None
+                        ),
                         expand=True,
                     ),
                     ft.Container(
