@@ -39,6 +39,8 @@ VIDEO_EXTENSIONS = frozenset({
 
 # ─── 倍速档位 ───
 PLAYBACK_SPEEDS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0, 8.0, 16.0)
+SPEED_MIN = 0.25
+SPEED_MAX = 16.0
 DEFAULT_SPEED = 1.0
 DEFAULT_VOLUME = 100.0
 
@@ -70,13 +72,15 @@ CONTROLS_AUTO_HIDE_MS = 3000
 # ─── 位置轮询间隔（毫秒）───
 POSITION_POLL_INTERVAL_MS = 500
 
-# ─── 键盘快捷键映射 ───
+# ─── 键盘快捷键映射（无修饰键的单键）───
 KEYBOARD_SHORTCUTS = {
     "space": "play_pause",
     "left": "seek_backward",
     "right": "seek_forward",
     "up": "volume_up",
     "down": "volume_down",
+    "[": "speed_down",
+    "]": "speed_up",
     "m": "toggle_mute",
     "f": "toggle_fullscreen",
     "f11": "toggle_fullscreen",

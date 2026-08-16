@@ -17,7 +17,7 @@ Inspired by PotPlayer's interaction design and VLC's format versatility.
 - **Volume system** — Slider, mute toggle, mouse wheel adjustment, persistent
 - **Playback speed** — 0.25x–16x with quick preset buttons (0.25x–4.0x)
 - **Fullscreen** — Double-click video or press `F`/`F11`; control bar auto-hides, shows on mouse move to bottom
-- **Keyboard shortcuts** — Space, ←/→, ↑/↓, M, F, F11, N, P, S, T, Escape, Delete
+- **Keyboard shortcuts** — Space, ←/→, ↑/↓, [/], M, F, F11, N, P, S, T, Ctrl+O, Ctrl+Shift+O, Escape, Delete
 - **Recent files** — Persistent history of last 30 opened files
 - **Settings persistence** — Volume, playback rate, play mode, sidebar width, time display mode
 - **Session restore** — Remembers playlist, current track, and playback position on exit; prompts to resume on next launch
@@ -71,11 +71,16 @@ python main.py
 | Key | Action |
 |-----|--------|
 | `Space` | Play / Pause |
-| `←` / `→` | Seek -5s / +5s |
+| `←` / `→` | Seek -10s / +10s (Shift for -20s / +20s) |
 | `↑` / `↓` | Volume +5 / -5 |
+| `[` / `]` | Speed down / up |
 | `M` | Toggle mute |
-| `F` | Toggle fullscreen |
+| `F` / `F11` | Toggle fullscreen |
 | `N` / `P` | Next / Previous track |
+| `S` | Stop |
+| `T` | Toggle remaining time display |
+| `Ctrl+O` | Open file dialog |
+| `Ctrl+Shift+O` | Open folder dialog |
 | `Esc` | Exit fullscreen |
 | `Delete` | Remove current from playlist |
 

@@ -10,7 +10,15 @@ import logging
 
 import flet as ft
 
-from configs.app_config import KEYBOARD_SHORTCUTS, SEEK_STEP_SHORT, SIDEBAR_WIDTH, VOLUME_STEP
+from configs.app_config import (
+    KEYBOARD_SHORTCUTS,
+    PLAYBACK_SPEEDS,
+    SEEK_STEP_SHORT,
+    SIDEBAR_WIDTH,
+    SPEED_MAX,
+    SPEED_MIN,
+    VOLUME_STEP,
+)
 from configs.theme import C_BG_PANEL, C_TEXT, C_TEXT_SUB
 from components.sidebar import Sidebar
 from components.player_area import PlayerArea
@@ -92,9 +100,36 @@ def App(controller: PlayerController):
 
     ft.use_effect(_check_session, dependencies=[])
 
+    # ─── 倍速调节辅助 ───
+    def _adjust_speed(direction: int):
+        current = state.playback_rate
+        if direction > 0:
+            for s in PLAYBACK_SPEEDS:
+                if s > current + 1e-9:
+                    controller.set_playback_rate(min(s, SPEED_MAX))
+                    return
+            controller.set_playback_rate(SPEED_MAX)
+        else:
+            for s in reversed(PLAYBACK_SPEEDS):
+                if s < current - 1e-9:
+                    controller.set_playback_rate(max(s, SPEED_MIN))
+                    return
+            controller.set_playback_rate(SPEED_MIN)
+
     # ─── 键盘快捷键 ───
     def _on_keyboard(e: ft.KeyboardEvent):
         key = e.key.lower()
+
+        # Ctrl 组合键优先处理
+        if e.ctrl:
+            if key == "o":
+                if e.shift:
+                    asyncio.ensure_future(_open_folder())
+                else:
+                    asyncio.ensure_future(_open_file())
+                return
+            return
+
         action = KEYBOARD_SHORTCUTS.get(key)
         if action is None:
             return
@@ -116,6 +151,10 @@ def App(controller: PlayerController):
         elif action == "volume_down":
             new_vol = max(0.0, state.volume - VOLUME_STEP)
             controller.set_volume(new_vol)
+        elif action == "speed_up":
+            _adjust_speed(+1)
+        elif action == "speed_down":
+            _adjust_speed(-1)
         elif action == "toggle_mute":
             controller.toggle_mute()
         elif action == "toggle_fullscreen":
@@ -178,6 +217,7 @@ def App(controller: PlayerController):
 
     def _on_stop():
         controller.stop()
+
     def _on_track_change(idx: int):
         controller.on_track_change(idx)
 
