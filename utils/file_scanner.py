@@ -28,13 +28,20 @@ def _make_item(entry: Path) -> PlaylistItem | None:
     except (OSError, PermissionError) as exc:
         logger.warning("无法读取文件信息 %s: %s", entry, exc)
         return None
+    except Exception as exc:
+        logger.error("创建播放列表项失败 %s: %s", entry, exc)
+        return None
 
 
 def scan_videos(folder: str) -> List[PlaylistItem]:
     """扫描文件夹（非递归）中所有视频文件。"""
-    folder_path = Path(folder).expanduser()
-    if not folder_path.is_dir():
-        logger.warning("路径不是目录: %s", folder)
+    try:
+        folder_path = Path(folder).expanduser()
+        if not folder_path.is_dir():
+            logger.warning("路径不是目录: %s", folder)
+            return []
+    except Exception as exc:
+        logger.error("路径解析失败 %s: %s", folder, exc)
         return []
 
     items: List[PlaylistItem] = []
@@ -50,6 +57,8 @@ def scan_videos(folder: str) -> List[PlaylistItem]:
                     items.append(item)
     except (OSError, PermissionError) as exc:
         logger.error("扫描文件夹失败 %s: %s", folder, exc)
+    except Exception as exc:
+        logger.error("扫描文件夹时发生意外错误 %s: %s", folder, exc)
     return items
 
 
@@ -91,10 +100,14 @@ def _scan_recursive(
 
 
 def make_playlist_item(path: str) -> PlaylistItem:
-    """从单个路径创建 PlaylistItem。"""
-    p = Path(path).expanduser()
-    item = _make_item(p)
-    return item if item else PlaylistItem(path=path, title=p.stem, size=0)
+    """从单个路径创建 PlaylistItem。路径无效时返回占位项而非抛出异常。"""
+    try:
+        p = Path(path).expanduser()
+        item = _make_item(p)
+        return item if item else PlaylistItem(path=path, title=p.stem, size=0)
+    except Exception as exc:
+        logger.error("创建播放列表项失败 %s: %s", path, exc)
+        return PlaylistItem(path=path, title=Path(path).stem, size=0)
 
 
 def make_playlist_items(paths: List[str]) -> List[PlaylistItem]:
@@ -102,21 +115,26 @@ def make_playlist_items(paths: List[str]) -> List[PlaylistItem]:
     seen: set[str] = set()
     items: List[PlaylistItem] = []
     for path_str in paths:
-        p = Path(path_str).expanduser()
-        key = str(p.resolve())
-        if key in seen:
-            continue
-        seen.add(key)
-        if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS:
-            item = _make_item(p)
-            if item:
-                items.append(item)
-        elif p.is_dir():
-            for sub in scan_videos(str(p)):
-                skey = str(Path(sub.path).resolve())
-                if skey not in seen:
-                    seen.add(skey)
-                    items.append(sub)
+        try:
+            p = Path(path_str).expanduser()
+            key = str(p.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS:
+                item = _make_item(p)
+                if item:
+                    items.append(item)
+            elif p.is_dir():
+                for sub in scan_videos(str(p)):
+                    skey = str(Path(sub.path).resolve())
+                    if skey not in seen:
+                        seen.add(skey)
+                        items.append(sub)
+        except (OSError, PermissionError) as exc:
+            logger.warning("处理路径失败 %s: %s", path_str, exc)
+        except Exception as exc:
+            logger.error("处理路径时发生意外错误 %s: %s", path_str, exc)
     items.sort(key=lambda x: x.title.lower())
     return items[:MAX_PLAYLIST]
 

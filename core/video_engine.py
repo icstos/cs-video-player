@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 import flet as ft
 from flet_video import (
@@ -26,6 +26,8 @@ from utils.formatters import to_uri
 
 logger = logging.getLogger(__name__)
 
+ErrorCallback = Callable[[str, str], None]  # (label, error_message)
+
 
 class VideoEngine:
     """对 flet_video.Video 的异步安全封装。"""
@@ -36,6 +38,7 @@ class VideoEngine:
         self._seek_pos: int = 0
         self._pending_restore: Optional[tuple[int, bool]] = None
         self._page: Optional[ft.Page] = None
+        self._error_callback: Optional[ErrorCallback] = None
 
     @property
     def ref(self) -> ft.Ref[Video]:
@@ -71,6 +74,23 @@ class VideoEngine:
 
     def bind_page(self, page: ft.Page) -> None:
         self._page = page
+
+    @property
+    def error_callback(self) -> Optional[ErrorCallback]:
+        return self._error_callback
+
+    @error_callback.setter
+    def error_callback(self, value: Optional[ErrorCallback]) -> None:
+        self._error_callback = value
+
+    def _report_error(self, label: str, exc: BaseException) -> None:
+        """记录日志并通知 UI 层错误。"""
+        logger.error("视频引擎操作失败 %s: %s", label, exc, exc_info=exc)
+        if self._error_callback:
+            try:
+                self._error_callback(label, str(exc))
+            except Exception:
+                logger.exception("错误回调执行失败")
 
     def _update_page(self) -> None:
         if self._page is not None:
@@ -121,7 +141,7 @@ class VideoEngine:
         try:
             await fn()
         except Exception as exc:
-            logger.exception("视频引擎操作失败 %s: %s", label, exc)
+            self._report_error(label, exc)
 
     async def play(self) -> None:
         v = self.video
@@ -167,7 +187,7 @@ class VideoEngine:
             now_ms = current.in_milliseconds if current else 0
             await self.seek(max(0, now_ms + delta_ms))
         except Exception as exc:
-            logger.exception("相对跳转失败: %s", exc)
+            self._report_error("seek_relative", exc)
 
     async def jump_to(self, index: int) -> None:
         v = self.video
@@ -236,5 +256,5 @@ class VideoEngine:
         try:
             return await v.take_screenshot(format="image/png")
         except Exception as exc:
-            logger.exception("截图失败: %s", exc)
+            self._report_error("take_screenshot", exc)
             return None

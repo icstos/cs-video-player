@@ -32,6 +32,7 @@ from configs.theme import (
 )
 from core.models import PlayMode, PlayerState
 from core.video_engine import VideoEngine
+from utils.error_handler import handle_error
 from utils.formatters import fmt_time, parse_ms, parse_idx
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def PlayerArea(
                     await v.play()
                     set_is_playing(True)
                 except Exception as e:
-                    logger.error("play failed: %s", e)
+                    handle_error(e, page=page, context="播放视频")
 
         asyncio.ensure_future(_jump())
 
@@ -124,24 +125,36 @@ def PlayerArea(
         engine.pending_restore = (position_ms, is_playing)
 
         async def _restore():
-            await engine.restore_after_mode_change(position_ms, is_playing)
+            try:
+                await engine.restore_after_mode_change(position_ms, is_playing)
+            except Exception as e:
+                handle_error(e, page=page, context="恢复播放状态")
 
         asyncio.ensure_future(_restore())
 
     ft.use_effect(_on_auto_play_toggle, dependencies=[state.play_mode])
 
     def _on_load(e):
+        try:
+            _handle_load()
+        except Exception as exc:
+            handle_error(exc, page=page, context="视频加载")
+
+    def _handle_load():
         pending = engine.pending_restore
         if pending:
             pos, was_playing = pending
             engine.pending_restore = None
 
             async def _restore():
-                if pos > 0:
-                    await engine.seek(pos)
-                if was_playing:
-                    await engine.play()
-                set_is_playing(was_playing)
+                try:
+                    if pos > 0:
+                        await engine.seek(pos)
+                    if was_playing:
+                        await engine.play()
+                    set_is_playing(was_playing)
+                except Exception as exc:
+                    handle_error(exc, page=page, context="恢复播放位置")
 
             asyncio.ensure_future(_restore())
             return
@@ -150,8 +163,11 @@ def PlayerArea(
             state.pending_restore_pos = 0
 
             async def _restore_pos():
-                await asyncio.sleep(0.1)
-                await engine.seek(restore_pos)
+                try:
+                    await asyncio.sleep(0.1)
+                    await engine.seek(restore_pos)
+                except Exception as exc:
+                    handle_error(exc, page=page, context="恢复进度")
 
             asyncio.ensure_future(_restore_pos())
             set_is_playing(False)
@@ -159,18 +175,27 @@ def PlayerArea(
         set_is_playing(True)
 
     def _on_complete(e):
-        on_complete()
+        try:
+            on_complete()
+        except Exception as exc:
+            handle_error(exc, page=page, context="播放完成处理")
 
     def _on_pos(e):
-        if not engine.is_seeking:
-            ms = parse_ms(e.data)
-            set_position_ms(ms)
-            on_position_change(ms)
+        try:
+            if not engine.is_seeking:
+                ms = parse_ms(e.data)
+                set_position_ms(ms)
+                on_position_change(ms)
+        except Exception as exc:
+            logger.error("位置更新失败: %s", exc)
 
     def _on_dur(e):
-        ms = parse_ms(e.data)
-        set_duration_ms(ms)
-        on_duration_change(ms)
+        try:
+            ms = parse_ms(e.data)
+            set_duration_ms(ms)
+            on_duration_change(ms)
+        except Exception as exc:
+            logger.error("时长更新失败: %s", exc)
 
     def _on_enter_fs(e):
         if not state.is_fullscreen:
@@ -181,15 +206,21 @@ def PlayerArea(
             on_toggle_fullscreen()
 
     async def _toggle_play(e=None):
-        await engine.play_or_pause()
-        set_is_playing(not is_playing)
-        on_toggle_play()
+        try:
+            await engine.play_or_pause()
+            set_is_playing(not is_playing)
+            on_toggle_play()
+        except Exception as exc:
+            handle_error(exc, page=page, context="播放/暂停")
 
     async def _stop(e=None):
-        await engine.stop()
-        set_is_playing(False)
-        set_position_ms(0)
-        on_stop()
+        try:
+            await engine.stop()
+            set_is_playing(False)
+            set_position_ms(0)
+            on_stop()
+        except Exception as exc:
+            handle_error(exc, page=page, context="停止播放")
 
     # ─── 进度条 ───
 
@@ -214,7 +245,10 @@ def PlayerArea(
         set_position_ms(pos)
 
         async def _do_seek():
-            await engine.seek(pos)
+            try:
+                await engine.seek(pos)
+            except Exception as exc:
+                handle_error(exc, page=page, context="进度跳转")
 
         asyncio.ensure_future(_do_seek())
         on_seek(pos)

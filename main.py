@@ -8,7 +8,7 @@ CS Video Player — 主入口
     configs/     — 配置与主题常量
     core/        — 数据模型、播放引擎、播放控制器
     components/  — 声明式 UI 组件（侧边栏、播放区、根组件）
-    utils/       — 工具函数（格式化、文件扫描、持久化存储）
+    utils/       — 工具函数（格式化、文件扫描、持久化存储、错误处理）
 
 运行:
     python main.py
@@ -16,8 +16,10 @@ CS Video Player — 主入口
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
+import traceback
 
 import flet as ft
 
@@ -31,6 +33,7 @@ from configs.app_config import (
 from configs.theme import C_BG_DARK
 from components.app import App
 from core.player_controller import PlayerController
+from utils.error_handler import handle_error
 
 # ─── 日志配置 ───
 logging.basicConfig(
@@ -42,8 +45,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _global_excepthook(exc_type, exc_value, exc_tb) -> None:
+    """全局未捕获异常钩子：记录日志，不崩溃。"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.exit(0)
+    logger.critical(
+        "未捕获的异常: %s: %s",
+        exc_type.__name__,
+        exc_value,
+        exc_info=(exc_type, exc_value, exc_tb),
+    )
+
+
+def _async_exception_handler(loop, context) -> None:
+    """asyncio 未处理异常回调：记录日志，不崩溃。"""
+    exc = context.get("exception")
+    msg = context.get("message", "异步任务异常")
+    if exc:
+        logger.error("%s: %s\n%s", msg, exc, "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+    else:
+        logger.error("%s", msg)
+
+
+sys.excepthook = _global_excepthook
+
+
 async def main(page: ft.Page) -> None:
     """Flet 应用入口。"""
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(_async_exception_handler)
+
     # ─── 窗口配置 ───
     page.title = APP_NAME
     page.theme_mode = ft.ThemeMode.DARK
@@ -59,8 +90,12 @@ async def main(page: ft.Page) -> None:
     await page.window.center()
 
     # ─── 初始化播放控制器 ───
-    controller = PlayerController()
-    controller.load_settings()
+    try:
+        controller = PlayerController()
+        controller.load_settings()
+    except Exception as exc:
+        handle_error(exc, page=page, context="初始化播放控制器")
+        raise
 
     # ─── 渲染根组件 ───
     page.render(App, controller=controller)

@@ -24,6 +24,7 @@ from components.sidebar import Sidebar
 from components.player_area import PlayerArea
 from core.models import SortKey
 from core.player_controller import PlayerController
+from utils.error_handler import handle_error, show_error_snackbar, show_info_snackbar
 from utils.file_scanner import make_playlist_items, scan_videos
 
 logger = logging.getLogger(__name__)
@@ -205,6 +206,15 @@ def App(controller: PlayerController):
 
     ft.use_effect(_sync_title, dependencies=[play_nonce])
 
+    # ─── 错误提示（监听 state.last_error）───
+    def _on_error_change():
+        err = state.last_error
+        if err:
+            show_error_snackbar(page, err)
+            controller.clear_error()
+
+    ft.use_effect(_on_error_change, dependencies=[state.last_error])
+
     # ─── 播放控制回调 ───
     def _play_at(idx: int):
         controller.play_at(idx)
@@ -290,8 +300,10 @@ def App(controller: PlayerController):
             items = make_playlist_items(paths)
             if items:
                 controller.add_files(items, replace=True)
+            else:
+                show_info_snackbar(page, "所选文件均不受支持")
         except Exception as e:
-            logger.error("打开文件失败: %s", e)
+            handle_error(e, page=page, context="打开文件")
 
     async def _open_folder():
         picker = picker_ref.current
@@ -305,16 +317,17 @@ def App(controller: PlayerController):
                 return
             items = scan_videos(folder)
             if not items:
-                page.show_dialog(
-                    ft.SnackBar(content=ft.Text("该文件夹下未找到视频文件"))
-                )
+                show_info_snackbar(page, "该文件夹下未找到视频文件")
                 return
             controller.add_files(items, replace=True)
         except Exception as e:
-            logger.error("打开文件夹失败: %s", e)
+            handle_error(e, page=page, context="打开文件夹")
 
     def _open_recent(path: str):
-        controller.play_recent(path)
+        try:
+            controller.play_recent(path)
+        except Exception as e:
+            handle_error(e, page=page, context="打开最近文件")
 
     # ─── 排序后列表 ───
     display = controller.get_sorted_playlist()

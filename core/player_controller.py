@@ -13,6 +13,7 @@ from typing import Callable, List
 from configs.app_config import DEFAULT_SPEED, DEFAULT_VOLUME, MAX_PLAYLIST
 from core.models import PlayMode, PlaylistItem, PlayerState, SortKey
 from core.video_engine import VideoEngine
+from utils.error_handler import classify_error
 from utils.storage import StorageManager
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,14 @@ class PlayerController:
         self._sort_key: SortKey = SortKey.DEFAULT
         self._listeners: List[StateCallback] = []
         self._play_nonce = 0
+        self._engine.error_callback = self._on_engine_error
+
+    def _on_engine_error(self, label: str, error_msg: str) -> None:
+        """VideoEngine 错误回调：分类错误并通知 UI。"""
+        friendly = classify_error(error_msg)
+        logger.error("引擎错误 [%s]: %s → %s", label, error_msg, friendly)
+        self._state.last_error = friendly
+        self._notify()
 
     # ─── 属性 ───
 
@@ -355,8 +364,12 @@ class PlayerController:
     def play_recent(self, path: str) -> None:
         from utils.file_scanner import make_playlist_item
 
-        item = make_playlist_item(path)
-        self.set_playlist([item])
+        try:
+            item = make_playlist_item(path)
+            self.set_playlist([item])
+        except Exception as exc:
+            logger.error("打开最近文件失败 %s: %s", path, exc)
+            self.set_error(classify_error(exc))
 
     def remove_recent(self, path: str) -> None:
         self._recents = [r for r in self._recents if r != path]
