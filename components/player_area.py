@@ -3,6 +3,7 @@
 PlayerArea 组件 — 视频显示区 + 自定义控制栏。
 
 声明式组件：接收播放器状态与回调，高频状态隔离在组件内部。
+控制栏采用紧凑单行布局，全屏/非全屏功能完全一致。
 """
 
 from __future__ import annotations
@@ -23,11 +24,16 @@ from configs.theme import (
     C_BG_DARKEST,
     C_BG_PANEL,
     C_BORDER,
+    C_DIVIDER,
     C_PRIMARY,
     C_TEXT,
     C_TEXT_SUB,
     FONT_SIZE_SMALL,
     FONT_SIZE_TINY,
+    ICON_SIZE_MD,
+    ICON_SIZE_LG,
+    SPACING_SM,
+    SPACING_MD,
 )
 from core.models import PlayMode, PlayerState
 from core.video_engine import VideoEngine
@@ -57,6 +63,8 @@ def PlayerArea(
     on_position_change: Callable[[int], None],
     on_duration_change: Callable[[int], None],
     on_toggle_remaining_time: Callable,
+    on_toggle_sidebar: Callable = None,
+    sidebar_visible: bool = True,
 ):
     """Player area component."""
     position_ms, set_position_ms = ft.use_state(0)
@@ -87,7 +95,6 @@ def PlayerArea(
         if not state.is_fullscreen:
             return
 
-        # 取消已有的延迟任务
         prev = _auto_hide_timer.current
         if prev is not None and not prev.done():
             prev.cancel()
@@ -118,7 +125,6 @@ def PlayerArea(
             v = engine.video
             if not v or not (0 <= state.current_index < len(state.playlist)):
                 return
-            # 等待 Video 控件挂载到页面（page 属性在未挂载时抛 RuntimeError）
             for attempt in range(20):
                 try:
                     _ = v.page
@@ -280,13 +286,11 @@ def PlayerArea(
 
     def _slider_value(e) -> int | None:
         """从 Slider 事件中提取位置值（毫秒）。"""
-        # 方式 1：解析 e.data
         try:
             if e.data is not None:
                 return int(float(e.data))
         except (TypeError, ValueError):
             pass
-        # 方式 2：从事件控件的 value 属性读取
         try:
             ctrl = getattr(e, "control", None)
             if ctrl is not None and getattr(ctrl, "value", None) is not None:
@@ -345,14 +349,15 @@ def PlayerArea(
     current_mode_icon = play_mode_icons.get(state.play_mode, ft.Icons.PLAY_ARROW)
     current_mode_label = play_mode_labels.get(state.play_mode, "顺序播放")
 
-    def _icon_btn(icon, on_click, tooltip="", enabled=True, color=None):
+    def _icon_btn(icon, on_click, tooltip="", enabled=True, color=None, size=ICON_SIZE_MD):
         return ft.IconButton(
             icon=icon,
             icon_color=color or C_TEXT,
             on_click=on_click,
             tooltip=tooltip,
             disabled=not enabled,
-            icon_size=20,
+            icon_size=size,
+            style=ft.ButtonStyle(padding=ft.Padding.all(4)),
         )
 
     # ─── 时间显示 ───
@@ -364,8 +369,6 @@ def PlayerArea(
 
     def _on_time_click(e):
         on_toggle_remaining_time()
-
-    # ─── 进度条 label（拖拽时显示时间）───
 
     slider_label = fmt_time(position_ms) if engine.is_seeking else ""
 
@@ -392,24 +395,13 @@ def PlayerArea(
         expand=True,
     )
 
-    # ─── 控制栏内容 ───
+    # ─── 控制栏（紧凑单行布局，全屏/非全屏一致）───
 
     def _build_controls_bar():
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Container(
-                        content=ft.Text(
-                            title,
-                            color=C_TEXT,
-                            size=FONT_SIZE_SMALL,
-                            max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS,
-                            weight=ft.FontWeight.W_500,
-                        ),
-                        padding=ft.Padding.only(left=12, right=12, top=8),
-                        visible=has_video,
-                    ),
+                    # 进度条行
                     ft.Row(
                         controls=[
                             ft.GestureDetector(
@@ -439,26 +431,44 @@ def PlayerArea(
                                 size=FONT_SIZE_TINY,
                             ),
                         ],
-                        spacing=8,
+                        spacing=SPACING_SM,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
+                    # 按钮行（单行紧凑）
                     ft.Row(
                         controls=[
+                            # 侧边栏切换（仅非全屏）
                             _icon_btn(
-                                ft.Icons.SKIP_PREVIOUS,
+                                ft.Icons.MENU_ROUNDED if not sidebar_visible else ft.Icons.MENU_OPEN_ROUNDED,
+                                lambda e: on_toggle_sidebar() if on_toggle_sidebar else None,
+                                "侧边栏",
+                                color=C_TEXT_SUB,
+                                size=ICON_SIZE_MD,
+                            ) if not state.is_fullscreen else ft.Container(width=0),
+                            # 上一曲
+                            _icon_btn(
+                                ft.Icons.SKIP_PREVIOUS_ROUNDED,
                                 lambda e: on_prev(),
                                 "上一曲",
                                 enabled=state.has_prev,
                             ),
+                            # 播放/暂停
                             _icon_btn(
-                                ft.Icons.PAUSE
-                                if is_playing
-                                else ft.Icons.PLAY_ARROW,
+                                ft.Icons.PAUSE_ROUNDED if is_playing else ft.Icons.PLAY_ARROW_ROUNDED,
                                 _toggle_play,
                                 "播放/暂停",
                                 enabled=has_video,
                                 color=C_PRIMARY,
+                                size=ICON_SIZE_LG,
                             ),
+                            # 下一曲
+                            _icon_btn(
+                                ft.Icons.SKIP_NEXT_ROUNDED,
+                                lambda e: on_next(),
+                                "下一曲",
+                                enabled=state.has_next,
+                            ),
+                            # 停止
                             _icon_btn(
                                 ft.Icons.STOP_CIRCLE_OUTLINED,
                                 _stop,
@@ -466,12 +476,7 @@ def PlayerArea(
                                 enabled=has_video,
                                 color=C_TEXT_SUB,
                             ),
-                            _icon_btn(
-                                ft.Icons.SKIP_NEXT,
-                                lambda e: on_next(),
-                                "下一曲",
-                                enabled=state.has_next,
-                            ),
+                            # 播放模式
                             _icon_btn(
                                 current_mode_icon,
                                 lambda e: on_toggle_play_mode(),
@@ -479,7 +484,8 @@ def PlayerArea(
                                 enabled=has_video,
                                 color=C_PRIMARY,
                             ),
-                            ft.Container(width=12),
+                            ft.Container(width=SPACING_SM),
+                            # 倍速
                             ft.PopupMenuButton(
                                 content=ft.Text(
                                     _rate_label(state.playback_rate),
@@ -491,14 +497,10 @@ def PlayerArea(
                                     ft.PopupMenuItem(
                                         content=ft.Text(
                                             _rate_label(s),
-                                            color=C_PRIMARY
-                                            if s == state.playback_rate
-                                            else C_TEXT,
+                                            color=C_PRIMARY if s == state.playback_rate else C_TEXT,
                                             size=FONT_SIZE_SMALL,
                                         ),
-                                        icon=ft.Icons.CHECK
-                                        if s == state.playback_rate
-                                        else None,
+                                        icon=ft.Icons.CHECK if s == state.playback_rate else None,
                                         on_click=lambda e, s=s: on_set_rate(s),
                                     )
                                     for s in PLAYBACK_SPEEDS
@@ -507,11 +509,22 @@ def PlayerArea(
                                 menu_position=ft.PopupMenuPosition.UNDER,
                             ),
                             ft.Container(expand=True),
+                            # 标题（中间，仅非全屏）
+                            ft.Container(
+                                content=ft.Text(
+                                    title,
+                                    color=C_TEXT_SUB,
+                                    size=FONT_SIZE_TINY,
+                                    max_lines=1,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                ),
+                                expand=True if state.is_fullscreen else False,
+                                visible=has_video and state.is_fullscreen,
+                            ) if state.is_fullscreen else ft.Container(expand=True),
+                            # 音量
                             ft.GestureDetector(
                                 content=_icon_btn(
-                                    ft.Icons.VOLUME_OFF
-                                    if state.muted or state.volume == 0
-                                    else ft.Icons.VOLUME_UP,
+                                    ft.Icons.VOLUME_OFF if state.muted or state.volume == 0 else ft.Icons.VOLUME_UP,
                                     lambda e: on_toggle_mute(),
                                     "静音",
                                     color=C_TEXT_SUB,
@@ -525,28 +538,26 @@ def PlayerArea(
                                 active_color=C_PRIMARY,
                                 inactive_color=C_BORDER,
                                 thumb_color=C_PRIMARY,
-                                width=90,
+                                width=80,
                                 on_change=_vol_change,
                             ),
-                            ft.Container(width=8),
+                            # 全屏
                             _icon_btn(
-                                ft.Icons.FULLSCREEN
-                                if not state.is_fullscreen
-                                else ft.Icons.FULLSCREEN_EXIT,
+                                ft.Icons.FULLSCREEN if not state.is_fullscreen else ft.Icons.FULLSCREEN_EXIT,
                                 lambda e: on_toggle_fullscreen(),
                                 "全屏",
                                 color=C_TEXT_SUB,
                             ),
                         ],
-                        spacing=4,
+                        spacing=SPACING_SM,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                 ],
-                spacing=4,
+                spacing=0,
             ),
             bgcolor=C_BG_PANEL,
-            border=ft.Border.only(top=ft.BorderSide(1, C_BORDER)),
-            padding=ft.Padding.only(left=8, right=12, top=4, bottom=8),
+            border=ft.Border.only(top=ft.BorderSide(1, C_DIVIDER)),
+            padding=ft.Padding.only(left=6, right=8, top=2, bottom=4),
         )
 
     # ─── 全屏底部控制栏悬停区域 ───
@@ -556,12 +567,38 @@ def PlayerArea(
             return
         if e.local_position is None:
             return
-        # 鼠标接近底部时显示控制栏
-        # 由于无法获取确切高度，使用 0.85 作为阈值
         _show_controls_and_schedule()
 
     # ─── 控制栏（全屏/非全屏共用同一实例）───
     controls_bar = _build_controls_bar()
+
+    # 全屏模式：控制栏叠在视频底部
+    # 非全屏模式：控制栏在视频下方
+    if state.is_fullscreen:
+        return ft.Stack(
+            controls=[
+                ft.GestureDetector(
+                    content=ft.Container(
+                        content=video_control,
+                        expand=True,
+                        bgcolor=C_BG_DARKEST,
+                    ),
+                    on_double_tap=lambda e: (
+                        on_toggle_fullscreen() if state.is_fullscreen else None
+                    ),
+                    on_hover=_on_video_area_hover,
+                    on_scroll=_on_vol_wheel,
+                    expand=True,
+                ),
+                ft.Container(
+                    content=controls_bar,
+                    alignment=ft.Alignment.BOTTOM_CENTER,
+                    visible=controls_visible,
+                    expand=True,
+                ),
+            ],
+            expand=True,
+        )
 
     return ft.Column(
         controls=[
@@ -585,7 +622,7 @@ def PlayerArea(
                             controls=[
                                 ft.Icon(
                                     ft.Icons.VIDEO_LIBRARY_OUTLINED,
-                                    size=56,
+                                    size=48,
                                     color=C_TEXT_SUB,
                                 ),
                                 ft.Text(

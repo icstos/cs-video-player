@@ -2,6 +2,7 @@
 侧边栏组件 — 播放列表、排序、文件打开、近期记录。
 
 声明式组件：接收播放器状态与回调，高频状态隔离在组件内部。
+支持折叠/展开切换。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from configs.theme import (
     C_BG_HOVER,
     C_BG_PANEL,
     C_BORDER,
+    C_DIVIDER,
     C_PRIMARY,
     C_RED,
     C_TEXT,
@@ -26,6 +28,10 @@ from configs.theme import (
     FONT_SIZE_TINY,
     FONT_SIZE_TITLE,
     ICON_SIZE_SM,
+    ICON_SIZE_MD,
+    SPACING_SM,
+    SPACING_MD,
+    SPACING_LG,
 )
 from core.models import PlaylistItem, SortKey
 from utils.formatters import human_size
@@ -46,7 +52,9 @@ def Sidebar(
     on_open_recent: Callable[[str], None],
     on_clear_playlist: Callable,
     on_remove_recent: Callable[[str], None],
-    sidebar_width: float = 320.0,
+    on_toggle_visible: Callable,
+    sidebar_visible: bool = True,
+    sidebar_width: float = 280.0,
 ):
     """侧边栏组件。"""
     hovered_idx, set_hovered_idx = ft.use_state(-1)
@@ -60,7 +68,7 @@ def Sidebar(
                 size=FONT_SIZE_TINY,
                 weight=ft.FontWeight.W_600 if active else ft.FontWeight.W_400,
             ),
-            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
             border_radius=4,
             bgcolor=C_BG_ACTIVE if active else None,
             ink=True,
@@ -71,12 +79,12 @@ def Sidebar(
         return ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(icon, size=18, color=C_PRIMARY),
+                    ft.Icon(icon, size=ICON_SIZE_MD, color=C_PRIMARY),
                     ft.Text(text, color=C_TEXT, size=FONT_SIZE_BODY),
                 ],
-                spacing=8,
+                spacing=SPACING_MD,
             ),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
             border_radius=6,
             ink=True,
             on_click=on_click,
@@ -89,11 +97,7 @@ def Sidebar(
                 ft.PopupMenuItem(
                     content=ft.Row(
                         controls=[
-                            ft.Icon(
-                                ft.Icons.HISTORY,
-                                size=14,
-                                color=C_TEXT_SUB,
-                            ),
+                            ft.Icon(ft.Icons.HISTORY, size=13, color=C_TEXT_SUB),
                             ft.Text(
                                 Path(p).name,
                                 color=C_TEXT,
@@ -103,7 +107,7 @@ def Sidebar(
                                 expand=True,
                             ),
                         ],
-                        spacing=8,
+                        spacing=SPACING_MD,
                     ),
                     on_click=lambda e, path=p: on_open_recent(path),
                 )
@@ -133,9 +137,7 @@ def Sidebar(
             content=ft.Row(
                 controls=[
                     ft.Icon(
-                        ft.Icons.PLAY_CIRCLE
-                        if is_active
-                        else ft.Icons.VIDEO_FILE,
+                        ft.Icons.PLAY_CIRCLE if is_active else ft.Icons.VIDEO_FILE,
                         size=ICON_SIZE_SM,
                         color=C_PRIMARY if is_active else C_TEXT_SUB,
                     ),
@@ -147,9 +149,7 @@ def Sidebar(
                                 size=FONT_SIZE_SMALL,
                                 max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS,
-                                weight=ft.FontWeight.W_600
-                                if is_active
-                                else ft.FontWeight.W_400,
+                                weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.W_400,
                             ),
                             ft.Text(
                                 human_size(item.size),
@@ -157,18 +157,14 @@ def Sidebar(
                                 size=FONT_SIZE_TINY,
                             ),
                         ],
-                        spacing=2,
+                        spacing=1,
                         expand=True,
                     ),
-                    ft.Icon(
-                        ft.Icons.DRAG_HANDLE,
-                        size=14,
-                        color=C_TEXT_SUB,
-                    ),
+                    ft.Icon(ft.Icons.DRAG_HANDLE, size=12, color=C_TEXT_SUB),
                 ],
-                spacing=8,
+                spacing=SPACING_MD,
             ),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=5),
             bgcolor=bg,
             border_radius=4,
             ink=True,
@@ -187,9 +183,7 @@ def Sidebar(
                     on_click=lambda e: on_play(orig_idx),
                 ),
                 ft.PopupMenuItem(
-                    content=ft.Text(
-                        "从列表移除", color=C_RED, size=FONT_SIZE_SMALL
-                    ),
+                    content=ft.Text("从列表移除", color=C_RED, size=FONT_SIZE_SMALL),
                     icon=ft.Icons.DELETE_OUTLINE,
                     on_click=lambda e: on_remove(orig_idx),
                 ),
@@ -201,11 +195,7 @@ def Sidebar(
             group="playlist",
             data=orig_idx,
             content_when_dragging=ft.Container(
-                content=ft.Container(
-                    height=44,
-                    bgcolor=C_BORDER,
-                    border_radius=4,
-                ),
+                content=ft.Container(height=36, bgcolor=C_BORDER, border_radius=4),
                 opacity=0.3,
             ),
         )
@@ -236,69 +226,67 @@ def Sidebar(
                     text_align=ft.TextAlign.CENTER,
                 ),
                 alignment=ft.Alignment.CENTER,
-                padding=40,
+                padding=30,
             )
         ]
 
-    return ft.Container(
+    # ─── 侧边栏内容 ───
+    sidebar_content = ft.Container(
         content=ft.Column(
             controls=[
+                # 顶部标题栏 + 折叠按钮
                 ft.Container(
                     content=ft.Row(
                         controls=[
-                            ft.Icon(
-                                ft.Icons.SMART_DISPLAY,
-                                size=22,
-                                color=C_PRIMARY,
-                            ),
+                            ft.Icon(ft.Icons.SMART_DISPLAY, size=18, color=C_PRIMARY),
                             ft.Text(
                                 "CS Video Player",
                                 color=C_TEXT,
                                 size=FONT_SIZE_TITLE,
                                 weight=ft.FontWeight.W_700,
                             ),
+                            ft.Container(expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.MENU_OPEN_ROUNDED,
+                                icon_color=C_TEXT_SUB,
+                                icon_size=ICON_SIZE_MD,
+                                tooltip="折叠侧边栏",
+                                on_click=lambda e: on_toggle_visible(),
+                                style=ft.ButtonStyle(
+                                    padding=ft.Padding.all(4),
+                                ),
+                            ),
                         ],
-                        spacing=8,
+                        spacing=SPACING_MD,
                     ),
-                    padding=ft.Padding.symmetric(horizontal=16, vertical=14),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                 ),
+                # 菜单按钮区
                 ft.Container(
                     content=ft.Column(
                         controls=[
                             _menu_btn(ft.Icons.VIDEO_FILE, "打开文件", on_open_file),
-                            _menu_btn(
-                                ft.Icons.FOLDER_OPEN, "打开文件夹", on_open_folder
-                            ),
+                            _menu_btn(ft.Icons.FOLDER_OPEN, "打开文件夹", on_open_folder),
                             ft.PopupMenuButton(
                                 content=ft.Row(
                                     controls=[
-                                        ft.Icon(
-                                            ft.Icons.HISTORY,
-                                            size=18,
-                                            color=C_PRIMARY,
-                                        ),
-                                        ft.Text(
-                                            "近期记录",
-                                            color=C_TEXT,
-                                            size=FONT_SIZE_BODY,
-                                        ),
+                                        ft.Icon(ft.Icons.HISTORY, size=ICON_SIZE_MD, color=C_PRIMARY),
+                                        ft.Text("近期记录", color=C_TEXT, size=FONT_SIZE_BODY),
                                     ],
-                                    spacing=8,
+                                    spacing=SPACING_MD,
                                 ),
                                 items=recent_items,
                                 bgcolor=C_BG_PANEL,
                                 menu_position=ft.PopupMenuPosition.UNDER,
                             ),
                         ],
-                        spacing=2,
+                        spacing=1,
                     ),
-                    padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                 ),
-                ft.Container(
-                    height=1,
-                    bgcolor=C_BORDER,
-                    margin=ft.Margin.symmetric(horizontal=12, vertical=4),
-                ),
+                # 分割线
+                ft.Container(height=1, bgcolor=C_DIVIDER, margin=ft.Margin.symmetric(horizontal=10, vertical=3)),
+                # 排序栏
                 ft.Container(
                     content=ft.Row(
                         controls=[
@@ -309,24 +297,23 @@ def Sidebar(
                                 weight=ft.FontWeight.W_600,
                             ),
                             ft.Container(expand=True),
-                            *[
-                                _sort_btn(SortKey(k))
-                                for k in ("default", "name", "size", "date")
-                            ],
+                            *[_sort_btn(SortKey(k)) for k in ("default", "name", "size", "date")],
                         ],
-                        spacing=4,
+                        spacing=SPACING_SM,
                     ),
-                    padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=4),
                 ),
+                # 列表区
                 ft.Container(
                     content=ft.ListView(
                         controls=playlist_controls,
                         expand=True,
-                        spacing=2,
-                        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                        spacing=1,
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     ),
                     expand=True,
                 ),
+                # 底部状态栏
                 ft.Container(
                     content=ft.Row(
                         controls=[
@@ -337,30 +324,27 @@ def Sidebar(
                             ),
                             ft.Container(expand=True),
                             ft.Container(
-                                content=ft.Text(
-                                    "清空",
-                                    color=C_RED,
-                                    size=FONT_SIZE_TINY,
-                                ),
-                                padding=ft.Padding.symmetric(
-                                    horizontal=8, vertical=2
-                                ),
+                                content=ft.Text("清空", color=C_RED, size=FONT_SIZE_TINY),
+                                padding=ft.Padding.symmetric(horizontal=6, vertical=1),
                                 border_radius=4,
                                 ink=True,
                                 on_click=on_clear_playlist,
                                 visible=bool(display),
                             ),
                         ],
-                        spacing=8,
+                        spacing=SPACING_MD,
                     ),
-                    padding=ft.Padding.symmetric(horizontal=12, vertical=6),
-                    border=ft.Border.only(top=ft.BorderSide(1, C_BORDER)),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+                    border=ft.Border.only(top=ft.BorderSide(1, C_DIVIDER)),
                 ),
             ],
             spacing=0,
         ),
-        width=sidebar_width,
+        width=sidebar_width if sidebar_visible else 0,
         bgcolor=C_BG_PANEL,
         border=ft.Border.only(right=ft.BorderSide(1, C_BORDER)),
+        visible=sidebar_visible,
         expand=False,
     )
+
+    return sidebar_content

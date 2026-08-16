@@ -15,11 +15,12 @@ from configs.app_config import (
     PLAYBACK_SPEEDS,
     SEEK_STEP_SHORT,
     SIDEBAR_WIDTH,
+    SIDEBAR_DEFAULT_VISIBLE,
     SPEED_MAX,
     SPEED_MIN,
     VOLUME_STEP,
 )
-from configs.theme import C_BG_PANEL, C_TEXT, C_TEXT_SUB
+from configs.theme import C_BG_PANEL, C_BG_DARK, C_TEXT, C_TEXT_SUB, C_PRIMARY
 from components.sidebar import Sidebar
 from components.player_area import PlayerArea
 from core.models import SortKey
@@ -50,6 +51,7 @@ def App(controller: PlayerController):
     recents = controller.recents
     sort_key = controller.sort_key
     sidebar_width, set_sidebar_width = ft.use_state(float(SIDEBAR_WIDTH))
+    sidebar_visible, set_sidebar_visible = ft.use_state(SIDEBAR_DEFAULT_VISIBLE)
     session_checked = ft.use_ref(False)
 
     # ─── FilePicker 服务 ───
@@ -332,6 +334,9 @@ def App(controller: PlayerController):
     # ─── 排序后列表 ───
     display = controller.get_sorted_playlist()
 
+    def _toggle_sidebar():
+        set_sidebar_visible(lambda v: not v)
+
     # ─── 卸载时保存设置 ───
     def _on_unmount():
         controller.save_settings()
@@ -354,6 +359,8 @@ def App(controller: PlayerController):
                 on_open_recent=_open_recent,
                 on_clear_playlist=_on_clear_playlist,
                 on_remove_recent=_on_remove_recent,
+                on_toggle_visible=_toggle_sidebar,
+                sidebar_visible=sidebar_visible,
                 sidebar_width=sidebar_width,
             ),
             PlayerArea(
@@ -375,6 +382,8 @@ def App(controller: PlayerController):
                 on_position_change=_on_position_change,
                 on_duration_change=_on_duration_change,
                 on_toggle_remaining_time=_on_toggle_remaining_time,
+                on_toggle_sidebar=_toggle_sidebar,
+                sidebar_visible=sidebar_visible,
             ),
         ],
         expand=True,

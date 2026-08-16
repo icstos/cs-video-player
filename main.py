@@ -30,7 +30,7 @@ from configs.app_config import (
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
-from configs.theme import C_BG_DARK
+from configs.theme import C_BG_DARK, C_PRIMARY, C_TEXT
 from components.app import App
 from core.player_controller import PlayerController
 from utils.error_handler import handle_error
@@ -79,6 +79,17 @@ async def main(page: ft.Page) -> None:
     page.title = APP_NAME
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = C_BG_DARK
+
+    # 蓝色科技风主题
+    page.theme = ft.Theme(
+        color_scheme_seed=C_PRIMARY,
+        color_scheme=ft.ColorScheme(
+            primary=C_PRIMARY,
+            on_primary="#FFFFFF",
+            surface=C_BG_DARK,
+            on_surface=C_TEXT,
+        ),
+    )
 
     page.window.width = WINDOW_DEFAULT_WIDTH
     page.window.height = WINDOW_DEFAULT_HEIGHT
