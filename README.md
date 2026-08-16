@@ -25,7 +25,7 @@ Inspired by PotPlayer's interaction design and VLC's format versatility.
 ```
 cs-video-player/
   main.py                    # Entry point
-  requirements.txt           # Dependencies
+  pyproject.toml             # Project config & dependencies
   configs/
     app_config.py            # Constants & configuration
     theme.py                 # Color palette & typography
@@ -47,7 +47,13 @@ cs-video-player/
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+pip install .
+```
+
+Or for development:
+
+```bash
+pip install -e .
 ```
 
 ## Usage

@@ -1,0 +1,41 @@
+[project]
+name = "cs-video-player"
+version = "1.0.0"
+description = "基于 Flet 的声明式本地视频播放器，深度参考 PotPlayer 交互逻辑与 VLC 全格式能力"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "CS Video Player" }]
+keywords = ["flet", "video", "player", "desktop", "potplayer"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "flet==0.86.5",
+    "flet-video==0.86.5",
+]
+
+[project.urls]
+Repository = "https://github.com/cs-video-player/cs-video-player"
+
+[project.scripts]
+cs-video-player = "main:main_entry"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["components*", "configs*", "core*", "utils*"]
+exclude = ["tests*", "__pycache__*"]

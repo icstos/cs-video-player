@@ -66,5 +66,10 @@ async def main(page: ft.Page) -> None:
     page.render(App, controller=controller)
 
 
+def main_entry():
+    """Console script entry point."""
+    ft.run(main)
+
+
 if __name__ == "__main__":
     ft.run(main)

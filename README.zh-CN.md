@@ -25,7 +25,7 @@
 ```
 cs-video-player/
   main.py                    # 入口文件
-  requirements.txt           # 依赖列表
+  pyproject.toml             # 项目配置与依赖
   configs/
     app_config.py            # 常量与配置
     theme.py                 # 配色与字体
@@ -47,7 +47,13 @@ cs-video-player/
 ## 安装
 
 ```bash
-pip install -r requirements.txt
+pip install .
+```
+
+开发模式安装：
+
+```bash
+pip install -e .
 ```
 
 ## 使用
