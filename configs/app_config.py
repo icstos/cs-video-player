@@ -75,6 +75,7 @@ POSITION_POLL_INTERVAL_MS = 500
 # ─── 键盘快捷键映射（无修饰键的单键）───
 KEYBOARD_SHORTCUTS = {
     "space": "play_pause",
+    " ": "play_pause",
     "left": "seek_backward",
     "right": "seek_forward",
     "up": "volume_up",

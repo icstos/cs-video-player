@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from typing import Callable
 
 import flet as ft
@@ -88,16 +87,19 @@ def PlayerArea(
         if not state.is_fullscreen:
             return
 
-        def _hide():
-            set_controls_visible(False)
+        # 取消已有的延迟任务
+        prev = _auto_hide_timer.current
+        if prev is not None and not prev.done():
+            prev.cancel()
 
-        timer = _auto_hide_timer.current
-        if timer:
-            timer.cancel()
-        _auto_hide_timer.current = threading.Timer(
-            CONTROLS_AUTO_HIDE_MS / 1000.0, _hide
-        )
-        _auto_hide_timer.current.start()
+        async def _delayed_hide():
+            try:
+                await asyncio.sleep(CONTROLS_AUTO_HIDE_MS / 1000.0)
+                set_controls_visible(False)
+            except asyncio.CancelledError:
+                pass
+
+        _auto_hide_timer.current = asyncio.ensure_future(_delayed_hide())
 
     def _show_controls_and_schedule():
         if state.is_fullscreen:
