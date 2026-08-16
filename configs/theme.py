@@ -1,0 +1,50 @@
+"""
+配色系统 — 专业深色主题。
+所有颜色集中管理，保证 UI 视觉一致性。
+"""
+
+# ─── 主色调 ───
+C_PRIMARY = "#2F80ED"
+C_PRIMARY_DARK = "#2470D4"
+C_HOVER = "#4A90F5"
+
+# ─── 背景层级 ───
+C_BG_DARKEST = "#0A0E15"
+C_BG_DARK = "#0E131B"
+C_BG_PANEL = "#161E2E"
+C_BG_ITEM = "#1E283A"
+C_BG_ACTIVE = "#1C3A5E"
+C_BG_HOVER = "#1B2436"
+
+# ─── 文字 ───
+C_TEXT = "#E8EDF5"
+C_TEXT_SUB = "#8B95A8"
+C_TEXT_DIM = "#5A6478"
+
+# ─── 边框 / 分割线 ───
+C_BORDER = "#2A3548"
+C_BORDER_LIGHT = "#3A4558"
+
+# ─── 功能色 ───
+C_RED = "#FF5252"
+C_GREEN = "#4CAF50"
+C_YELLOW = "#FFC107"
+C_ORANGE = "#FF9800"
+
+# ─── 滑块 ───
+SEEK_BAR_COLOR = C_BORDER
+SEEK_BAR_HOVER_COLOR = C_HOVER
+
+# ─── 文字大小 ───
+FONT_SIZE_TITLE = 15
+FONT_SIZE_BODY = 13
+FONT_SIZE_SMALL = 12
+FONT_SIZE_TINY = 11
+FONT_SIZE_MICRO = 10
+
+# ─── 图标大小 ───
+ICON_SIZE_SM = 16
+ICON_SIZE_MD = 18
+ICON_SIZE_LG = 20
+ICON_SIZE_XL = 24
+ICON_SIZE_XXL = 28
