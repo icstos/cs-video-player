@@ -198,6 +198,12 @@ class PlayerController:
         if self._state.playlist:
             self.play_at(0)
 
+    def stop(self) -> None:
+        """停止播放并重置位置。"""
+        self._state.is_playing = False
+        self._state.position_ms = 0
+        self._notify()
+
     def play_last(self) -> None:
         if self._state.playlist:
             self.play_at(len(self._state.playlist) - 1)
@@ -261,6 +267,11 @@ class PlayerController:
 
     def toggle_mute(self) -> None:
         self._state.muted = not self._state.muted
+        self._notify()
+
+    def toggle_remaining_time(self) -> None:
+        """切换时间显示模式：当前时间 / 剩余时间。"""
+        self._state.show_remaining_time = not self._state.show_remaining_time
         self._notify()
 
     def set_fullscreen(self, fullscreen: bool) -> None:
@@ -362,6 +373,7 @@ class PlayerController:
         StorageManager.set_setting("playback_rate", self._state.playback_rate)
         StorageManager.set_setting("play_mode", self._state.play_mode.value)
         StorageManager.set_setting("sidebar_width", self._state.sidebar_width)
+        StorageManager.set_setting("show_remaining_time", self._state.show_remaining_time)
 
     def load_settings(self) -> None:
         volume = StorageManager.get_setting("volume")
@@ -382,6 +394,10 @@ class PlayerController:
         width = StorageManager.get_setting("sidebar_width")
         if isinstance(width, (int, float)):
             self._state.sidebar_width = float(width)
+
+        show_remaining = StorageManager.get_setting("show_remaining_time")
+        if isinstance(show_remaining, bool):
+            self._state.show_remaining_time = show_remaining
 
         self._notify()
 

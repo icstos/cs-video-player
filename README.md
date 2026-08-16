@@ -12,11 +12,14 @@ Inspired by PotPlayer's interaction design and VLC's format versatility.
 - **Playlist management** — Add files/folders, sort by name/size/date, drag reorder
 - **Multi-file selection** — Pick multiple files at once or open an entire folder
 - **Playback modes** — Sequence, Loop All, Loop One, Shuffle
-- **Playback controls** — Play/pause, seek, volume, mute, playback rate (0.25x–4.0x)
-- **Fullscreen** — Double-click video area or press `F`
-- **Keyboard shortcuts** — Space, arrows, M, F, N, P, Escape, Delete
+- **Playback controls** — Play/pause, stop, prev/next, seek ±10s (Shift for ±20s)
+- **Progress bar** — Drag to seek with live time label; click time to toggle remaining-time display
+- **Volume system** — Slider, mute toggle, mouse wheel adjustment, persistent
+- **Playback speed** — 0.25x–16x with quick preset buttons (0.25x–4.0x)
+- **Fullscreen** — Double-click video or press `F`/`F11`; control bar auto-hides, shows on mouse move to bottom
+- **Keyboard shortcuts** — Space, ←/→, ↑/↓, M, F, F11, N, P, S, T, Escape, Delete
 - **Recent files** — Persistent history of last 30 opened files
-- **Settings persistence** — Volume, playback rate, play mode, sidebar width
+- **Settings persistence** — Volume, playback rate, play mode, sidebar width, time display mode
 - **Session restore** — Remembers playlist, current track, and playback position on exit; prompts to resume on next launch
 - **Hardware acceleration** — Via mpv/libmpv backend
 - **Screenshots** — Capture current frame via `Video.take_screenshot()`

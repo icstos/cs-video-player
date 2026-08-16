@@ -38,17 +38,16 @@ VIDEO_EXTENSIONS = frozenset({
 })
 
 # ─── 倍速档位 ───
-PLAYBACK_SPEEDS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0)
+PLAYBACK_SPEEDS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0, 8.0, 16.0)
 DEFAULT_SPEED = 1.0
 DEFAULT_VOLUME = 100.0
 
 # ─── 快进/快退步长（毫秒）───
-SEEK_STEP_SHORT = 5_000       # ←/→  5秒
-SEEK_STEP_MEDIUM = 30_000    #   30秒
-SEEK_STEP_LONG = 60_000      # Shift+←/→  60秒
+SEEK_STEP_SHORT = 10_000      # ←/→  10秒（Shift 加倍为 20秒）
 
 # ─── 音量步长 ───
 VOLUME_STEP = 5.0
+VOLUME_WHEEL_STEP = 5.0
 
 # ─── 排序选项 ───
 SORT_KEYS = ("default", "name", "size", "date")
@@ -80,8 +79,11 @@ KEYBOARD_SHORTCUTS = {
     "down": "volume_down",
     "m": "toggle_mute",
     "f": "toggle_fullscreen",
+    "f11": "toggle_fullscreen",
     "n": "next_track",
     "p": "prev_track",
+    "s": "stop",
+    "t": "toggle_remaining_time",
     "escape": "exit_fullscreen",
     "delete": "remove_current",
 }

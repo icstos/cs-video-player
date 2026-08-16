@@ -10,7 +10,7 @@ import logging
 
 import flet as ft
 
-from configs.app_config import KEYBOARD_SHORTCUTS, SIDEBAR_WIDTH
+from configs.app_config import KEYBOARD_SHORTCUTS, SEEK_STEP_SHORT, SIDEBAR_WIDTH, VOLUME_STEP
 from configs.theme import C_BG_PANEL, C_TEXT, C_TEXT_SUB
 from components.sidebar import Sidebar
 from components.player_area import PlayerArea
@@ -105,14 +105,16 @@ def App(controller: PlayerController):
                 controller.toggle_playing()
             asyncio.ensure_future(_do())
         elif action == "seek_backward":
-            asyncio.ensure_future(controller.engine.seek_relative(-5000))
+            step = SEEK_STEP_SHORT * (2 if e.shift else 1)
+            asyncio.ensure_future(controller.engine.seek_relative(-step))
         elif action == "seek_forward":
-            asyncio.ensure_future(controller.engine.seek_relative(5000))
+            step = SEEK_STEP_SHORT * (2 if e.shift else 1)
+            asyncio.ensure_future(controller.engine.seek_relative(step))
         elif action == "volume_up":
-            new_vol = min(100.0, state.volume + 5.0)
+            new_vol = min(100.0, state.volume + VOLUME_STEP)
             controller.set_volume(new_vol)
         elif action == "volume_down":
-            new_vol = max(0.0, state.volume - 5.0)
+            new_vol = max(0.0, state.volume - VOLUME_STEP)
             controller.set_volume(new_vol)
         elif action == "toggle_mute":
             controller.toggle_mute()
@@ -122,6 +124,13 @@ def App(controller: PlayerController):
             controller.play_next()
         elif action == "prev_track":
             controller.play_prev()
+        elif action == "stop":
+            async def _do_stop():
+                await controller.engine.stop()
+                controller.stop()
+            asyncio.ensure_future(_do_stop())
+        elif action == "toggle_remaining_time":
+            controller.toggle_remaining_time()
         elif action == "exit_fullscreen":
             if state.is_fullscreen:
                 controller.set_fullscreen(False)
@@ -167,6 +176,8 @@ def App(controller: PlayerController):
     def _play_prev():
         controller.play_prev()
 
+    def _on_stop():
+        controller.stop()
     def _on_track_change(idx: int):
         controller.on_track_change(idx)
 
@@ -193,6 +204,9 @@ def App(controller: PlayerController):
 
     def _on_set_rate(rate: float):
         controller.set_playback_rate(rate)
+
+    def _on_toggle_remaining_time():
+        controller.toggle_remaining_time()
 
     def _on_position_change(ms: int):
         controller.update_position(ms)
@@ -297,6 +311,7 @@ def App(controller: PlayerController):
                 on_complete=_on_complete,
                 on_prev=_play_prev,
                 on_next=_play_next,
+                on_stop=_on_stop,
                 on_toggle_play_mode=_toggle_play_mode,
                 on_toggle_play=_on_toggle_play,
                 on_seek=_on_seek,
@@ -306,6 +321,7 @@ def App(controller: PlayerController):
                 on_set_rate=_on_set_rate,
                 on_position_change=_on_position_change,
                 on_duration_change=_on_duration_change,
+                on_toggle_remaining_time=_on_toggle_remaining_time,
             ),
         ],
         expand=True,
