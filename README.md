@@ -10,13 +10,14 @@ Inspired by PotPlayer's interaction design and VLC's format versatility.
 - **Full format support** — MP4, MKV, AVI, MOV, FLV, WebM, WMV, MPG, TS, RMVB, and more
 - **Declarative UI** — Built with `@ft.component` hooks API (`use_state`, `use_effect`, `use_ref`)
 - **Playlist management** — Add files/folders, sort by name/size/date, drag reorder
+- **Multi-file selection** — Pick multiple files at once or open an entire folder
 - **Playback modes** — Sequence, Loop All, Loop One, Shuffle
 - **Playback controls** — Play/pause, seek, volume, mute, playback rate (0.25x–4.0x)
 - **Fullscreen** — Double-click video area or press `F`
-- **Keyboard shortcuts** — Space, arrows, M, F, N, P, Escape
+- **Keyboard shortcuts** — Space, arrows, M, F, N, P, Escape, Delete
 - **Recent files** — Persistent history of last 30 opened files
 - **Settings persistence** — Volume, playback rate, play mode, sidebar width
-- **Playback position memory** — Resume from where you left off
+- **Session restore** — Remembers playlist, current track, and playback position on exit; prompts to resume on next launch
 - **Hardware acceleration** — Via mpv/libmpv backend
 - **Screenshots** — Capture current frame via `Video.take_screenshot()`
 
@@ -34,14 +35,14 @@ cs-video-player/
     video_engine.py          # flet-video wrapper (async-safe)
     player_controller.py     # State management bridge
   components/
-    app.py                   # Root component (keyboard, FilePicker, layout)
-    sidebar.py               # Playlist, file open, recents
+    app.py                   # Root component (keyboard, FilePicker, session restore, layout)
+    sidebar.py               # Playlist, file open, recents, drag reorder
     player_area.py           # Video display + control bar
     ui_helpers.py            # Reusable widget factories
   utils/
     formatters.py            # Time/size formatting, event data parsing
-    storage.py               # JSON persistence (recents, settings, positions)
-    file_scanner.py          # Folder scanning for video files
+    storage.py               # JSON persistence (recents, settings, positions, session)
+    file_scanner.py          # Folder scanning & batch item creation
 ```
 
 ## Installation

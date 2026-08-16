@@ -98,6 +98,7 @@ class PlayerState:
     subtitle_track: str = ""
     recent_folder: str = ""
     loop_selection: bool = False
+    pending_restore_pos: int = 0
 
     @property
     def has_media(self) -> bool:

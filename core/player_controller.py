@@ -10,7 +10,7 @@ import random
 from datetime import datetime
 from typing import Callable, List
 
-from configs.app_config import DEFAULT_SPEED, DEFAULT_VOLUME
+from configs.app_config import DEFAULT_SPEED, DEFAULT_VOLUME, MAX_PLAYLIST
 from core.models import PlayMode, PlaylistItem, PlayerState, SortKey
 from core.video_engine import VideoEngine
 from utils.storage import StorageManager
@@ -85,6 +85,27 @@ class PlayerController:
             self._add_recent(items[0].path)
         self._notify()
 
+    def add_files(self, items: List[PlaylistItem], replace: bool = False) -> None:
+        """批量添加文件到播放列表。replace=True 时替换整个列表。"""
+        if not items:
+            return
+        if replace or not self._state.playlist:
+            self._state.playlist = list(items)
+            self._state.current_index = 0
+            self._state.position_ms = 0
+            self._state.duration_ms = 0
+            self._state.is_playing = False
+            self._add_recent(items[0].path)
+        else:
+            existing_paths = {item.path for item in self._state.playlist}
+            for item in items:
+                if item.path not in existing_paths and len(self._state.playlist) < MAX_PLAYLIST:
+                    self._state.playlist.append(item)
+                    existing_paths.add(item.path)
+            self._add_recent(items[0].path)
+        self._play_nonce += 1
+        self._notify()
+
     def add_to_playlist(self, item: PlaylistItem) -> None:
         self._state.playlist.append(item)
         self._add_recent(item.path)
@@ -139,6 +160,14 @@ class PlayerController:
         elif to_idx <= self._state.current_index < from_idx:
             self._state.current_index += 1
         self._notify()
+
+    def reorder(self, from_idx: int, to_idx: int) -> None:
+        """拖拽排序：将 from_idx 项移动到 to_idx 位置（排序后的目标索引）。"""
+        self.move_item(from_idx, to_idx)
+
+    def remove_current(self) -> None:
+        """移除当前正在播放的项。"""
+        self.remove_from_playlist(self._state.current_index)
 
     # ─── 播放控制 ───
 
@@ -355,3 +384,58 @@ class PlayerController:
             self._state.sidebar_width = float(width)
 
         self._notify()
+
+    # ─── 会话恢复 ───
+
+    def get_saved_session(self) -> tuple[list[PlaylistItem], int, int, PlayMode] | None:
+        """读取上次关闭时保存的播放列表与进度。返回 (playlist, index, pos, mode) 或 None。"""
+        data = StorageManager.load_session()
+        raw = data.get("playlist")
+        if not isinstance(raw, list) or not raw:
+            return None
+        items: list[PlaylistItem] = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                try:
+                    items.append(PlaylistItem.from_dict(entry))
+                except Exception:
+                    pass
+        if not items:
+            return None
+        idx = max(0, min(int(data.get("current_index", 0)), len(items) - 1))
+        pos = max(0, int(data.get("position_ms", 0)))
+        mode_val = data.get("play_mode", "sequence")
+        try:
+            mode = PlayMode(mode_val)
+        except ValueError:
+            mode = PlayMode.SEQUENCE
+        return items, idx, pos, mode
+
+    def restore_session(
+        self, items: list[PlaylistItem], index: int, pos: int, mode: PlayMode
+    ) -> None:
+        """恢复上次会话的播放列表，设置播放位置但不自动播放。"""
+        self._state.playlist = items
+        self._state.current_index = index
+        self._state.play_mode = mode
+        self._state.position_ms = 0
+        self._state.duration_ms = 0
+        self._state.is_playing = False
+        self._state.pending_restore_pos = pos
+        self._play_nonce += 1
+        if items:
+            self._add_recent(items[index].path)
+        self._notify()
+
+    def save_session(self) -> None:
+        """保存当前播放列表与进度，供下次启动恢复。"""
+        if not self._state.playlist:
+            StorageManager.clear_session()
+            return
+        playlist_data = [item.to_dict() for item in self._state.playlist]
+        StorageManager.save_session(
+            playlist=playlist_data,
+            current_index=self._state.current_index,
+            position_ms=self._state.position_ms,
+            play_mode=self._state.play_mode.value,
+        )

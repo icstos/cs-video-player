@@ -23,6 +23,7 @@ APP_DATA_DIR = Path.home() / ".cs_video_player"
 RECENTS_FILE = APP_DATA_DIR / "recents.json"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
 PLAYBACK_STATE_FILE = APP_DATA_DIR / "playback_state.json"
+SESSION_FILE = APP_DATA_DIR / "session.json"
 
 # ─── 播放列表 ───
 MAX_RECENTS = 30

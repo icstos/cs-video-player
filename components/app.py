@@ -1,6 +1,6 @@
 """
 应用根组件 — 连接 PlayerController 与 UI 组件的声明式根。
-管理全局状态、FilePicker 服务、键盘快捷键。
+管理全局状态、FilePicker 服务、键盘快捷键、会话恢复。
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ import logging
 import flet as ft
 
 from configs.app_config import KEYBOARD_SHORTCUTS, SIDEBAR_WIDTH
+from configs.theme import C_BG_PANEL, C_TEXT, C_TEXT_SUB
 from components.sidebar import Sidebar
 from components.player_area import PlayerArea
 from core.models import SortKey
 from core.player_controller import PlayerController
-from utils.file_scanner import make_playlist_item, scan_videos
+from utils.file_scanner import make_playlist_items, scan_videos
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def App(controller: PlayerController):
     recents = controller.recents
     sort_key = controller.sort_key
     sidebar_width, set_sidebar_width = ft.use_state(float(SIDEBAR_WIDTH))
+    session_checked = ft.use_ref(False)
 
     # ─── FilePicker 服务 ───
     picker_ref = ft.use_ref(lambda: ft.FilePicker())
@@ -53,6 +55,42 @@ def App(controller: PlayerController):
             page.update()
 
     ft.use_effect(_register_picker, dependencies=[])
+
+    # ─── 启动时检查上次会话 ───
+    def _check_session():
+        if session_checked.current:
+            return
+        session_checked.current = True
+        session = controller.get_saved_session()
+        if not session:
+            return
+        items, idx, pos, mode = session
+
+        def _resume(e):
+            page.pop_dialog()
+            controller.restore_session(items, idx, pos, mode)
+
+        def _dismiss(e):
+            page.pop_dialog()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("恢复上次播放", color=C_TEXT),
+            content=ft.Text(
+                f"检测到上次未播放完的列表（{len(items)} 个视频）。\n"
+                f"是否从上次位置继续播放？",
+                color=C_TEXT_SUB,
+            ),
+            actions=[
+                ft.TextButton("不恢复", on_click=_dismiss),
+                ft.TextButton("继续播放", on_click=_resume),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=C_BG_PANEL,
+        )
+        page.show_dialog(dialog)
+
+    ft.use_effect(_check_session, dependencies=[])
 
     # ─── 键盘快捷键 ───
     def _on_keyboard(e: ft.KeyboardEvent):
@@ -87,11 +125,27 @@ def App(controller: PlayerController):
         elif action == "exit_fullscreen":
             if state.is_fullscreen:
                 controller.set_fullscreen(False)
+        elif action == "remove_current":
+            controller.remove_current()
 
     def _setup_keyboard():
         page.on_keyboard_event = _on_keyboard
 
     ft.use_effect(_setup_keyboard, dependencies=[])
+
+    # ─── 窗口关闭拦截：保存会话 ───
+    def _setup_window_close():
+        page.window.prevent_close = True
+
+        def _on_window_event(e: ft.WindowEvent):
+            if e.type == ft.WindowEventType.CLOSE:
+                controller.save_settings()
+                controller.save_session()
+                asyncio.ensure_future(page.window.destroy())
+
+        page.window.on_event = _on_window_event
+
+    ft.use_effect(_setup_window_close, dependencies=[])
 
     # ─── 窗口标题同步 ───
     def _sync_title():
@@ -152,6 +206,9 @@ def App(controller: PlayerController):
     def _on_remove(idx: int):
         controller.remove_from_playlist(idx)
 
+    def _on_reorder(from_idx: int, to_idx: int):
+        controller.reorder(from_idx, to_idx)
+
     def _on_clear_playlist():
         controller.clear_playlist()
 
@@ -171,13 +228,14 @@ def App(controller: PlayerController):
             files = await picker.pick_files(
                 dialog_title="选择视频文件",
                 file_type=ft.FilePickerFileType.VIDEO,
+                allow_multiple=True,
             )
             if not files:
                 return
-            f = files[0]
-            path = f.path or f.name
-            item = make_playlist_item(path)
-            controller.set_playlist([item])
+            paths = [f.path or f.name for f in files]
+            items = make_playlist_items(paths)
+            if items:
+                controller.add_files(items, replace=True)
         except Exception as e:
             logger.error("打开文件失败: %s", e)
 
@@ -193,12 +251,11 @@ def App(controller: PlayerController):
                 return
             items = scan_videos(folder)
             if not items:
-                page.overlay.append(
+                page.show_dialog(
                     ft.SnackBar(content=ft.Text("该文件夹下未找到视频文件"))
                 )
-                page.update()
                 return
-            controller.set_playlist(items)
+            controller.add_files(items, replace=True)
         except Exception as e:
             logger.error("打开文件夹失败: %s", e)
 
@@ -223,6 +280,7 @@ def App(controller: PlayerController):
                 recents=recents,
                 on_play=_play_at,
                 on_remove=_on_remove,
+                on_reorder=_on_reorder,
                 on_sort=_on_sort,
                 on_open_file=_open_file,
                 on_open_folder=_open_folder,

@@ -1,5 +1,5 @@
 """
-持久化存储管理 — 近期播放记录、应用设置与播放进度。
+持久化存储管理 — 近期播放记录、应用设置、播放进度与会话恢复。
 所有操作均包含异常处理，保证不会因磁盘问题导致应用崩溃。
 """
 
@@ -15,6 +15,7 @@ from configs.app_config import (
     MAX_RECENTS,
     PLAYBACK_STATE_FILE,
     RECENTS_FILE,
+    SESSION_FILE,
     SETTINGS_FILE,
 )
 
@@ -115,3 +116,29 @@ class StorageManager:
         states = StorageManager.load_playback_states()
         states[path] = position_ms
         StorageManager.save_playback_states(states)
+
+    # ─── 会话恢复（上次关闭时的播放列表与进度）───
+
+    @staticmethod
+    def save_session(
+        playlist: list[dict],
+        current_index: int,
+        position_ms: int,
+        play_mode: str,
+    ) -> None:
+        data = {
+            "playlist": playlist,
+            "current_index": current_index,
+            "position_ms": position_ms,
+            "play_mode": play_mode,
+        }
+        StorageManager._write_json(SESSION_FILE, data)
+
+    @staticmethod
+    def load_session() -> dict[str, Any]:
+        data = StorageManager._read_json(SESSION_FILE, {})
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def clear_session() -> None:
+        StorageManager._write_json(SESSION_FILE, {})

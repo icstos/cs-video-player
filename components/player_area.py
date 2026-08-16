@@ -111,6 +111,17 @@ def PlayerArea(
 
             asyncio.ensure_future(_restore())
             return
+        if state.pending_restore_pos > 0:
+            restore_pos = state.pending_restore_pos
+            state.pending_restore_pos = 0
+
+            async def _restore_pos():
+                await asyncio.sleep(0.1)
+                await engine.seek(restore_pos)
+
+            asyncio.ensure_future(_restore_pos())
+            set_is_playing(False)
+            return
         set_is_playing(True)
 
     def _on_complete(e):

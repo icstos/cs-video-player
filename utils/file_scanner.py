@@ -97,6 +97,30 @@ def make_playlist_item(path: str) -> PlaylistItem:
     return item if item else PlaylistItem(path=path, title=p.stem, size=0)
 
 
+def make_playlist_items(paths: List[str]) -> List[PlaylistItem]:
+    """从多个路径批量创建 PlaylistItem，自动过滤无效文件并按文件名排序。"""
+    seen: set[str] = set()
+    items: List[PlaylistItem] = []
+    for path_str in paths:
+        p = Path(path_str).expanduser()
+        key = str(p.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS:
+            item = _make_item(p)
+            if item:
+                items.append(item)
+        elif p.is_dir():
+            for sub in scan_videos(str(p)):
+                skey = str(Path(sub.path).resolve())
+                if skey not in seen:
+                    seen.add(skey)
+                    items.append(sub)
+    items.sort(key=lambda x: x.title.lower())
+    return items[:MAX_PLAYLIST]
+
+
 def is_valid_video(path: str) -> bool:
     """检查路径是否为受支持的视频文件。"""
     p = Path(path)

@@ -39,6 +39,7 @@ def Sidebar(
     recents: List[str],
     on_play: Callable[[int], None],
     on_remove: Callable[[int], None],
+    on_reorder: Callable[[int, int], None],
     on_sort: Callable[[SortKey], None],
     on_open_file: Callable,
     on_open_folder: Callable,
@@ -123,55 +124,62 @@ def Sidebar(
             )
         )
 
-    def _playlist_item(orig_idx: int, item: PlaylistItem, seq: int) -> ft.ContextMenu:
+    def _playlist_item(orig_idx: int, item: PlaylistItem, seq: int) -> ft.DragTarget:
         is_active = orig_idx == current_index
         is_hovered = seq == hovered_idx
         bg = C_BG_ACTIVE if is_active else (C_BG_HOVER if is_hovered else None)
 
-        return ft.ContextMenu(
-            content=ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Icon(
-                            ft.Icons.PLAY_CIRCLE
-                            if is_active
-                            else ft.Icons.VIDEO_FILE,
-                            size=ICON_SIZE_SM,
-                            color=C_PRIMARY if is_active else C_TEXT_SUB,
-                        ),
-                        ft.Column(
-                            controls=[
-                                ft.Text(
-                                    item.title,
-                                    color=C_TEXT,
-                                    size=FONT_SIZE_SMALL,
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
-                                    weight=ft.FontWeight.W_600
-                                    if is_active
-                                    else ft.FontWeight.W_400,
-                                ),
-                                ft.Text(
-                                    human_size(item.size),
-                                    color=C_TEXT_SUB,
-                                    size=FONT_SIZE_TINY,
-                                ),
-                            ],
-                            spacing=2,
-                            expand=True,
-                        ),
-                    ],
-                    spacing=8,
-                ),
-                padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=bg,
-                border_radius=4,
-                ink=True,
-                on_click=lambda e: on_play(orig_idx),
-                on_hover=lambda e: (
-                    set_hovered_idx(seq) if str(e.data) == "true" else set_hovered_idx(-1)
-                ),
+        item_content = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.PLAY_CIRCLE
+                        if is_active
+                        else ft.Icons.VIDEO_FILE,
+                        size=ICON_SIZE_SM,
+                        color=C_PRIMARY if is_active else C_TEXT_SUB,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                item.title,
+                                color=C_TEXT,
+                                size=FONT_SIZE_SMALL,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                                weight=ft.FontWeight.W_600
+                                if is_active
+                                else ft.FontWeight.W_400,
+                            ),
+                            ft.Text(
+                                human_size(item.size),
+                                color=C_TEXT_SUB,
+                                size=FONT_SIZE_TINY,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    ft.Icon(
+                        ft.Icons.DRAG_HANDLE,
+                        size=14,
+                        color=C_TEXT_SUB,
+                    ),
+                ],
+                spacing=8,
             ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            bgcolor=bg,
+            border_radius=4,
+            ink=True,
+            on_click=lambda e: on_play(orig_idx),
+            on_hover=lambda e: (
+                set_hovered_idx(seq) if str(e.data) == "true" else set_hovered_idx(-1)
+            ),
+        )
+
+        ctx = ft.ContextMenu(
+            content=item_content,
             secondary_items=[
                 ft.PopupMenuItem(
                     content=ft.Text("播放", color=C_TEXT, size=FONT_SIZE_SMALL),
@@ -186,6 +194,33 @@ def Sidebar(
                     on_click=lambda e: on_remove(orig_idx),
                 ),
             ],
+        )
+
+        draggable = ft.Draggable(
+            content=ctx,
+            group="playlist",
+            data=orig_idx,
+            content_when_dragging=ft.Container(
+                content=ft.Container(
+                    height=44,
+                    bgcolor=C_BORDER,
+                    border_radius=4,
+                ),
+                opacity=0.3,
+            ),
+        )
+
+        def _on_accept(e: ft.DragTargetEvent):
+            src = e.src
+            if src is not None and src.data is not None:
+                src_idx = int(src.data)
+                if src_idx != orig_idx:
+                    on_reorder(src_idx, orig_idx)
+
+        return ft.DragTarget(
+            content=draggable,
+            group="playlist",
+            on_accept=_on_accept,
         )
 
     playlist_controls: list[ft.Control] = [

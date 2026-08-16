@@ -10,13 +10,14 @@
 - **全格式支持** — MP4、MKV、AVI、MOV、FLV、WebM、WMV、MPG、TS、RMVB 等
 - **声明式 UI** — 基于 `@ft.component` hooks API（`use_state`、`use_effect`、`use_ref`）构建
 - **播放列表管理** — 添加文件/文件夹，按名称/大小/日期排序，拖拽排序
+- **多文件选择** — 一次选择多个文件或打开整个文件夹
 - **播放模式** — 顺序播放、列表循环、单曲循环、随机播放
 - **播放控制** — 播放/暂停、进度跳转、音量、静音、倍速播放（0.25x–4.0x）
 - **全屏** — 双击视频区域或按 `F` 键
-- **键盘快捷键** — 空格、方向键、M、F、N、P、Esc
+- **键盘快捷键** — 空格、方向键、M、F、N、P、Esc、Delete
 - **最近文件** — 持久化保存最近 30 个打开的文件记录
 - **设置持久化** — 音量、播放倍速、播放模式、侧栏宽度
-- **播放位置记忆** — 从上次中断处继续播放
+- **会话恢复** — 退出时自动保存播放列表、当前曲目与播放进度，下次启动时可选择继续播放
 - **硬件加速** — 基于 mpv/libmpv 后端
 - **截图** — 通过 `Video.take_screenshot()` 截取当前画面
 
@@ -34,14 +35,14 @@ cs-video-player/
     video_engine.py          # flet-video 封装（异步安全）
     player_controller.py     # 状态管理桥接层
   components/
-    app.py                   # 根组件（键盘、FilePicker、布局）
-    sidebar.py               # 播放列表、文件打开、最近文件
+    app.py                   # 根组件（键盘、FilePicker、会话恢复、布局）
+    sidebar.py               # 播放列表、文件打开、最近文件、拖拽排序
     player_area.py           # 视频显示 + 控制栏
     ui_helpers.py            # 可复用组件工厂
   utils/
     formatters.py            # 时间/大小格式化、事件数据解析
-    storage.py               # JSON 持久化（最近文件、设置、播放位置）
-    file_scanner.py          # 视频文件文件夹扫描
+    storage.py               # JSON 持久化（最近文件、设置、播放位置、会话）
+    file_scanner.py          # 视频文件扫描与批量创建
 ```
 
 ## 安装
