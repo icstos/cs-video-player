@@ -64,9 +64,20 @@ def PlayerArea(
     duration_ms, set_duration_ms = ft.use_state(0)
     is_playing, set_is_playing = ft.use_state(False)
     auto_play_toggle_init = ft.use_ref(True)
-    video_ref = ft.use_ref()
     controls_visible, set_controls_visible = ft.use_state(True)
     _auto_hide_timer = ft.use_ref(None)
+
+    # ─── 状态快照 ref（供事件回调读取最新值，避免闭包过期）───
+    is_playing_ref = ft.use_ref(False)
+    position_ms_ref = ft.use_ref(0)
+    is_playing_ref.current = is_playing
+    position_ms_ref.current = position_ms
+
+    # ─── 同步外部播放状态（键盘快捷键等外部触发的播放/暂停）───
+    def _sync_playing():
+        if state.is_playing != is_playing:
+            set_is_playing(state.is_playing)
+    ft.use_effect(_sync_playing, dependencies=[state.is_playing])
 
     page = ft.context.page
     engine.bind_page(page)
@@ -98,19 +109,30 @@ def PlayerArea(
     # ─── 播放逻辑 ───
 
     def _do_play():
-        if not state.playlist or not video_ref.current:
+        if not state.playlist:
             return
 
         async def _jump():
-            v = video_ref.current
-            if v and 0 <= state.current_index < len(state.playlist):
+            v = engine.video
+            if not v or not (0 <= state.current_index < len(state.playlist)):
+                return
+            # 等待 Video 控件挂载到页面（page 属性在未挂载时抛 RuntimeError）
+            for attempt in range(20):
                 try:
-                    await v.jump_to(state.current_index)
-                    await asyncio.sleep(0.05)
-                    await v.play()
-                    set_is_playing(True)
-                except Exception as e:
-                    handle_error(e, page=page, context="播放视频")
+                    _ = v.page
+                    break
+                except RuntimeError:
+                    await asyncio.sleep(0.1)
+            else:
+                logger.warning("Video 控件未能在 2 秒内挂载到页面")
+                return
+            try:
+                await v.jump_to(state.current_index)
+                await asyncio.sleep(0.05)
+                await v.play()
+                set_is_playing(True)
+            except Exception as e:
+                handle_error(e, page=page, context="播放视频")
 
         asyncio.ensure_future(_jump())
 
@@ -122,11 +144,13 @@ def PlayerArea(
             return
         if not state.has_video:
             return
-        engine.pending_restore = (position_ms, is_playing)
+        cur_pos = position_ms_ref.current
+        cur_playing = is_playing_ref.current
+        engine.pending_restore = (cur_pos, cur_playing)
 
         async def _restore():
             try:
-                await engine.restore_after_mode_change(position_ms, is_playing)
+                await engine.restore_after_mode_change(cur_pos, cur_playing)
             except Exception as e:
                 handle_error(e, page=page, context="恢复播放状态")
 
@@ -208,7 +232,8 @@ def PlayerArea(
     async def _toggle_play(e=None):
         try:
             await engine.play_or_pause()
-            set_is_playing(not is_playing)
+            new_playing = not is_playing_ref.current
+            set_is_playing(new_playing)
             on_toggle_play()
         except Exception as exc:
             handle_error(exc, page=page, context="播放/暂停")
@@ -226,22 +251,18 @@ def PlayerArea(
 
     def _on_slider_start(e):
         engine.is_seeking = True
-        engine.seek_pos = position_ms
+        engine.seek_pos = position_ms_ref.current
 
     def _on_slider_change(e):
-        try:
-            pos = int(float(e.data))
+        pos = _slider_value(e)
+        if pos is not None:
             engine.seek_pos = pos
             set_position_ms(pos)
-        except (TypeError, ValueError):
-            pass
 
     def _on_slider_end(e):
-        try:
-            pos = int(float(e.data))
-        except (TypeError, ValueError):
+        pos = _slider_value(e)
+        if pos is None:
             pos = engine.seek_pos
-        engine.is_seeking = False
         set_position_ms(pos)
 
         async def _do_seek():
@@ -249,9 +270,28 @@ def PlayerArea(
                 await engine.seek(pos)
             except Exception as exc:
                 handle_error(exc, page=page, context="进度跳转")
+            finally:
+                engine.is_seeking = False
 
         asyncio.ensure_future(_do_seek())
         on_seek(pos)
+
+    def _slider_value(e) -> int | None:
+        """从 Slider 事件中提取位置值（毫秒）。"""
+        # 方式 1：解析 e.data
+        try:
+            if e.data is not None:
+                return int(float(e.data))
+        except (TypeError, ValueError):
+            pass
+        # 方式 2：从事件控件的 value 属性读取
+        try:
+            ctrl = getattr(e, "control", None)
+            if ctrl is not None and getattr(ctrl, "value", None) is not None:
+                return int(float(ctrl.value))
+        except (TypeError, ValueError, AttributeError):
+            pass
+        return None
 
     # ─── 音量 ───
 
@@ -288,7 +328,6 @@ def PlayerArea(
     )
     playlist_mode = VideoEngine.get_playlist_mode(state.play_mode)
     slider_max = max(duration_ms, 1)
-
     play_mode_icons = {
         PlayMode.SEQUENCE: ft.Icons.PLAY_ARROW,
         PlayMode.REPEAT_ALL: ft.Icons.REPEAT,
@@ -329,7 +368,7 @@ def PlayerArea(
     slider_label = fmt_time(position_ms) if engine.is_seeking else ""
 
     video_control = Video(
-        ref=video_ref,
+        ref=engine.ref,
         playlist=video_playlist,
         playlist_mode=playlist_mode,
         controls={
@@ -519,6 +558,9 @@ def PlayerArea(
         # 由于无法获取确切高度，使用 0.85 作为阈值
         _show_controls_and_schedule()
 
+    # ─── 控制栏（全屏/非全屏共用同一实例）───
+    controls_bar = _build_controls_bar()
+
     return ft.Column(
         controls=[
             ft.Stack(
@@ -562,18 +604,10 @@ def PlayerArea(
                         alignment=ft.Alignment.CENTER,
                         visible=not has_video,
                     ),
-                    # 全屏模式下底部控制栏
-                    ft.Container(
-                        content=_build_controls_bar(),
-                        alignment=ft.Alignment.BOTTOM_CENTER,
-                        visible=state.is_fullscreen and controls_visible,
-                        expand=True,
-                    ),
                 ],
                 expand=True,
             ),
-            # 非全屏模式下控制栏
-            _build_controls_bar() if not state.is_fullscreen else ft.Container(height=0),
+            controls_bar,
         ],
         expand=True,
         spacing=0,
