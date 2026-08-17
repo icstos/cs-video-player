@@ -73,6 +73,7 @@ def PlayerArea(
     auto_play_toggle_init = ft.use_ref(True)
     controls_visible, set_controls_visible = ft.use_state(True)
     _auto_hide_timer = ft.use_ref(None)
+    _is_switching = ft.use_ref(False)       # 全屏切换进行中标记
 
     # ─── 状态快照 ref（供事件回调读取最新值，避免闭包过期）───
     is_playing_ref = ft.use_ref(False)
@@ -166,6 +167,31 @@ def PlayerArea(
 
     ft.use_effect(_on_auto_play_toggle, dependencies=[state.play_mode])
 
+    # ─── 全屏切换 ───
+    # 统一组件树结构下，Video 控件在切换时不被重建，
+    # 底层 media_kit 仅切换原生全屏窗口，播放位置和状态自然保持。
+    # 无需 seek/restore，避免人为卡顿。
+    _fs_prev = ft.use_ref(False)
+
+    def _on_fullscreen_toggle():
+        prev = _fs_prev.current
+        _fs_prev.current = state.is_fullscreen
+        if prev == state.is_fullscreen:
+            return
+        if not state.has_video:
+            return
+        # 切换瞬间标记，屏蔽可能到来的过时 on_position_change 事件
+        _is_switching.current = True
+
+        async def _clear_switch_flag():
+            # 短暂等待底层处理完 fullscreen 属性变更后解除屏蔽
+            await asyncio.sleep(0.15)
+            _is_switching.current = False
+
+        asyncio.ensure_future(_clear_switch_flag())
+
+    ft.use_effect(_on_fullscreen_toggle, dependencies=[state.is_fullscreen])
+
     def _on_load(e):
         try:
             _handle_load()
@@ -173,6 +199,9 @@ def PlayerArea(
             handle_error(exc, page=page, context="视频加载")
 
     def _handle_load():
+        # 全屏切换期间跳过 on_load 恢复（统一树结构下不应触发，保险起见跳过）
+        if _is_switching.current:
+            return
         pending = engine.pending_restore
         if pending:
             pos, was_playing = pending
@@ -214,10 +243,12 @@ def PlayerArea(
 
     def _on_pos(e):
         try:
-            if not engine.is_seeking:
-                ms = parse_ms(e.data)
-                set_position_ms(ms)
-                on_position_change(ms)
+            # 全屏切换期间屏蔽位置更新（底层可能发送过时/归零事件）
+            if _is_switching.current or engine.is_seeking:
+                return
+            ms = parse_ms(e.data)
+            set_position_ms(ms)
+            on_position_change(ms)
         except Exception as exc:
             logger.error("位置更新失败: %s", exc)
 
@@ -572,34 +603,7 @@ def PlayerArea(
     # ─── 控制栏（全屏/非全屏共用同一实例）───
     controls_bar = _build_controls_bar()
 
-    # 全屏模式：控制栏叠在视频底部
-    # 非全屏模式：控制栏在视频下方
-    if state.is_fullscreen:
-        return ft.Stack(
-            controls=[
-                ft.GestureDetector(
-                    content=ft.Container(
-                        content=video_control,
-                        expand=True,
-                        bgcolor=C_BG_DARKEST,
-                    ),
-                    on_double_tap=lambda e: (
-                        on_toggle_fullscreen() if state.is_fullscreen else None
-                    ),
-                    on_hover=_on_video_area_hover,
-                    on_scroll=_on_vol_wheel,
-                    expand=True,
-                ),
-                ft.Container(
-                    content=controls_bar,
-                    alignment=ft.Alignment.BOTTOM_CENTER,
-                    visible=controls_visible,
-                    expand=True,
-                ),
-            ],
-            expand=True,
-        )
-
+    # 统一的组件树：全屏/非全屏共用同一根结构，避免切换时 Video 控件被重建
     return ft.Column(
         controls=[
             ft.Stack(
@@ -610,9 +614,7 @@ def PlayerArea(
                             expand=True,
                             bgcolor=C_BG_DARKEST,
                         ),
-                        on_double_tap=lambda e: (
-                            on_toggle_fullscreen() if not state.is_fullscreen else None
-                        ),
+                        on_double_tap=lambda e: on_toggle_fullscreen(),
                         on_hover=_on_video_area_hover,
                         on_scroll=_on_vol_wheel,
                         expand=True,
@@ -643,10 +645,18 @@ def PlayerArea(
                         alignment=ft.Alignment.CENTER,
                         visible=not has_video,
                     ),
+                    # 全屏模式：控制栏叠在视频底部（自动隐藏）
+                    ft.Container(
+                        content=controls_bar if state.is_fullscreen else ft.Container(),
+                        alignment=ft.Alignment.BOTTOM_CENTER,
+                        visible=state.is_fullscreen and controls_visible,
+                        expand=True,
+                    ),
                 ],
                 expand=True,
             ),
-            controls_bar,
+            # 非全屏模式：控制栏固定在底部
+            controls_bar if not state.is_fullscreen else ft.Container(height=0),
         ],
         expand=True,
         spacing=0,
