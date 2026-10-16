@@ -1,6 +1,6 @@
 [project]
 name = "cs-video-player"
-version = "1.0.0"
+version = "1.0.4"
 description = "基于 Flet 的声明式本地视频播放器，深度参考 PotPlayer 交互逻辑与 VLC 全格式能力"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,8 +19,8 @@ classifiers = [
     "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-    "flet==0.86.5",
-    "flet-video==0.86.5",
+    "flet==1.0.4",
+    "flet-video==1.0.4",
 ]
 
 [project.urls]
