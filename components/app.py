@@ -1,6 +1,18 @@
-"""
-应用根组件 — 连接 PlayerController 与 UI 组件的声明式根。
-管理全局状态、FilePicker 服务、键盘快捷键、会话恢复。
+"""应用根组件 —— 把控制器、页面服务与两个视图接起来。
+
+职责限于「编排」：订阅控制器、注册全局副作用（快捷键 / 窗口关闭 / 会话恢复 /
+标题同步 / 错误回执）、把意图翻译成控制器调用。渲染本身交给 ``Sidebar`` 与
+``PlayerArea``，这里不画任何控件样式。
+
+几个刻意的选择：
+
+* **文件对话框用 cs-ui 的 ``FileDialog``**：构造即注册到页面，省掉手动维护
+  ``page.services`` 的样板；它按扩展名精确过滤，比系统 VIDEO 类型更贴近本项目
+  支持的格式表。
+* **排序结果用 ``use_memo`` 缓存**：500 项列表不必在每次位置轮询引发的重渲染里
+  重新排序，只有列表或排序键变化时才重算。
+* **卸载时保存设置**：``use_effect`` 返回清理函数，而不是把「保存」误当副作用
+  在首帧执行。
 """
 
 from __future__ import annotations
@@ -8,34 +20,37 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import flet as ft
+import ui
 
+from components.kit import confirm_dialog, toast
+from components.player_area import PlayerArea
+from components.sidebar import Sidebar
 from configs.app_config import (
     KEYBOARD_SHORTCUTS,
     PLAYBACK_SPEEDS,
     SEEK_STEP_SHORT,
-    SIDEBAR_WIDTH,
     SIDEBAR_DEFAULT_VISIBLE,
+    SIDEBAR_DEFAULT_WIDTH,
     SPEED_MAX,
     SPEED_MIN,
+    VIDEO_EXTENSIONS,
     VOLUME_STEP,
 )
-from configs.theme import C_BG_PANEL, C_BG_DARK, C_TEXT, C_TEXT_SUB, C_PRIMARY
-from components.sidebar import Sidebar
-from components.player_area import PlayerArea
-from core.models import SortKey
 from core.player_controller import PlayerController
-from utils.error_handler import handle_error, show_error_snackbar, show_info_snackbar
+from utils.error_handler import handle_error
 from utils.file_scanner import make_playlist_items, scan_videos
 
 logger = logging.getLogger(__name__)
 
+#: 对话框扩展名（不带点），来自应用支持的格式表 —— 只有一个事实源。
+VIDEO_FILTER = tuple(sorted(ext.lstrip(".") for ext in VIDEO_EXTENSIONS))
 
-@ft.component
+
+@ui.component
 def App(controller: PlayerController):
     """应用根组件。"""
-    # ─── 重渲染驱动：controller 状态变更时触发 tick ───
-    tick, set_tick = ft.use_state(0)
+    # ─── 控制器 → 重渲染 ───
+    tick, set_tick = ui.use_state(0)
 
     def _on_state_change(_state):
         set_tick(lambda t: t + 1)
@@ -43,31 +58,27 @@ def App(controller: PlayerController):
     def _register_listener():
         controller.add_listener(_on_state_change)
 
-    ft.use_effect(_register_listener, dependencies=[])
+    ui.use_effect(_register_listener, dependencies=[])
 
-    # ─── 全局状态快照 ───
     state = controller.state
     play_nonce = controller.play_nonce
     recents = controller.recents
     sort_key = controller.sort_key
-    sidebar_width, set_sidebar_width = ft.use_state(float(SIDEBAR_WIDTH))
-    sidebar_visible, set_sidebar_visible = ft.use_state(SIDEBAR_DEFAULT_VISIBLE)
-    session_checked = ft.use_ref(False)
 
-    # ─── FilePicker 服务 ───
-    picker_ref = ft.use_ref(lambda: ft.FilePicker())
+    sidebar_visible, set_sidebar_visible = ui.use_state(SIDEBAR_DEFAULT_VISIBLE)
+    session_checked = ui.use_ref(False)
+    sidebar_width = float(SIDEBAR_DEFAULT_WIDTH)
 
-    page = ft.context.page
+    #: 排序只在「列表 / 排序键」变化时重算，位置轮询不触发排序。
+    display = ui.use_memo(
+        lambda: controller.get_sorted_playlist(), [tick, sort_key]
+    )
 
-    def _register_picker():
-        picker = picker_ref.current
-        if picker and picker not in page.services:
-            page.services.append(picker)
-            page.update()
+    page = ui.context.page
+    # 构造即注册到当前页（cs-ui 的 FileDialog 契约），每个会话只建一份。
+    file_dialog = ui.use_ref(ui.FileDialog).current
 
-    ft.use_effect(_register_picker, dependencies=[])
-
-    # ─── 启动时检查上次会话 ───
+    # ─── 启动时询问是否恢复上次会话 ───
     def _check_session():
         if session_checked.current:
             return
@@ -84,53 +95,43 @@ def App(controller: PlayerController):
         def _dismiss(e):
             page.pop_dialog()
 
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("恢复上次播放", color=C_TEXT),
-            content=ft.Text(
-                f"检测到上次未播放完的列表（{len(items)} 个视频）。\n"
-                f"是否从上次位置继续播放？",
-                color=C_TEXT_SUB,
-            ),
-            actions=[
-                ft.TextButton("不恢复", on_click=_dismiss),
-                ft.TextButton("继续播放", on_click=_resume),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-            bgcolor=C_BG_PANEL,
+        page.show_dialog(
+            confirm_dialog(
+                heading="恢复上次播放",
+                message=(
+                    f"检测到上次未播放完的列表（{len(items)} 个视频）。\n"
+                    "是否从上次位置继续播放？"
+                ),
+                cancel_label="不恢复",
+                confirm_label="继续播放",
+                on_cancel=_dismiss,
+                on_confirm=_resume,
+            )
         )
-        page.show_dialog(dialog)
 
-    ft.use_effect(_check_session, dependencies=[])
+    ui.use_effect(_check_session, dependencies=[])
 
-    # ─── 倍速调节辅助 ───
-    def _adjust_speed(direction: int):
+    # ─── 倍速档位步进（纯计算，快捷键与菜单共用） ───
+    def _step_speed(direction: int) -> float | None:
         current = state.playback_rate
-        if direction > 0:
-            for s in PLAYBACK_SPEEDS:
-                if s > current + 1e-9:
-                    controller.set_playback_rate(min(s, SPEED_MAX))
-                    return
-            controller.set_playback_rate(SPEED_MAX)
-        else:
-            for s in reversed(PLAYBACK_SPEEDS):
-                if s < current - 1e-9:
-                    controller.set_playback_rate(max(s, SPEED_MIN))
-                    return
-            controller.set_playback_rate(SPEED_MIN)
+        candidates = PLAYBACK_SPEEDS if direction > 0 else tuple(reversed(PLAYBACK_SPEEDS))
+        for value in candidates:
+            changed = (
+                value > current + 1e-9
+                if direction > 0
+                else value < current - 1e-9
+            )
+            if changed:
+                return min(value, SPEED_MAX) if direction > 0 else max(value, SPEED_MIN)
+        return SPEED_MAX if direction > 0 else SPEED_MIN
 
     # ─── 键盘快捷键 ───
-    def _on_keyboard(e: ft.KeyboardEvent):
+    def _on_keyboard(e: ui.KeyboardEvent):
         key = e.key.lower()
 
-        # Ctrl 组合键优先处理
         if e.ctrl:
             if key == "o":
-                if e.shift:
-                    asyncio.ensure_future(_open_folder())
-                else:
-                    asyncio.ensure_future(_open_file())
-                return
+                asyncio.ensure_future(_open_folder() if e.shift else _open_file())
             return
 
         action = KEYBOARD_SHORTCUTS.get(key)
@@ -143,21 +144,21 @@ def App(controller: PlayerController):
                 controller.toggle_playing()
             asyncio.ensure_future(_do())
         elif action == "seek_backward":
-            step = SEEK_STEP_SHORT * (2 if e.shift else 1)
-            asyncio.ensure_future(controller.engine.seek_relative(-step))
+            asyncio.ensure_future(
+                controller.engine.seek_relative(-SEEK_STEP_SHORT * (2 if e.shift else 1))
+            )
         elif action == "seek_forward":
-            step = SEEK_STEP_SHORT * (2 if e.shift else 1)
-            asyncio.ensure_future(controller.engine.seek_relative(step))
+            asyncio.ensure_future(
+                controller.engine.seek_relative(SEEK_STEP_SHORT * (2 if e.shift else 1))
+            )
         elif action == "volume_up":
-            new_vol = min(100.0, state.volume + VOLUME_STEP)
-            controller.set_volume(new_vol)
+            controller.set_volume(min(100.0, state.volume + VOLUME_STEP))
         elif action == "volume_down":
-            new_vol = max(0.0, state.volume - VOLUME_STEP)
-            controller.set_volume(new_vol)
-        elif action == "speed_up":
-            _adjust_speed(+1)
-        elif action == "speed_down":
-            _adjust_speed(-1)
+            controller.set_volume(max(0.0, state.volume - VOLUME_STEP))
+        elif action in ("speed_up", "speed_down"):
+            rate = _step_speed(+1 if action == "speed_up" else -1)
+            if rate is not None:
+                controller.set_playback_rate(rate)
         elif action == "toggle_mute":
             controller.toggle_mute()
         elif action == "toggle_fullscreen":
@@ -182,183 +183,113 @@ def App(controller: PlayerController):
     def _setup_keyboard():
         page.on_keyboard_event = _on_keyboard
 
-    ft.use_effect(_setup_keyboard, dependencies=[])
+    ui.use_effect(_setup_keyboard, dependencies=[])
 
-    # ─── 窗口关闭拦截：保存会话 ───
+    # ─── 窗口关闭：先落盘，再销毁 ───
     def _setup_window_close():
         page.window.prevent_close = True
 
-        def _on_window_event(e: ft.WindowEvent):
-            if e.type == ft.WindowEventType.CLOSE:
+        def _on_window_event(e: ui.WindowEvent):
+            if e.type == ui.WindowEventType.CLOSE:
                 controller.save_settings()
                 controller.save_session()
                 asyncio.ensure_future(page.window.destroy())
 
         page.window.on_event = _on_window_event
 
-    ft.use_effect(_setup_window_close, dependencies=[])
+    ui.use_effect(_setup_window_close, dependencies=[])
 
-    # ─── 窗口标题同步 ───
+    # ─── 标题跟随当前片名 ───
     def _sync_title():
-        if state.has_video:
-            page.title = f"{state.current_item.title} — CS Video Player"
-        else:
-            page.title = "CS Video Player"
+        page.title = (
+            f"{state.current_item.title} — CS Video Player"
+            if state.has_video
+            else "CS Video Player"
+        )
         page.update()
 
-    ft.use_effect(_sync_title, dependencies=[play_nonce])
+    ui.use_effect(_sync_title, dependencies=[play_nonce])
 
-    # ─── 错误提示（监听 state.last_error）───
+    # ─── 错误回执 ───
     def _on_error_change():
-        err = state.last_error
-        if err:
-            show_error_snackbar(page, err)
+        if state.last_error:
+            toast(page, state.last_error, tone="error", duration=4000)
             controller.clear_error()
 
-    ft.use_effect(_on_error_change, dependencies=[state.last_error])
+    ui.use_effect(_on_error_change, dependencies=[state.last_error])
 
-    # ─── 播放控制回调 ───
-    def _play_at(idx: int):
-        controller.play_at(idx)
+    # ─── 卸载时保存设置（use_effect 的 cleanup，不在首帧误执行） ───
+    ui.use_effect(
+        lambda: None,
+        dependencies=[],
+        cleanup=lambda: controller.save_settings(),
+    )
 
-    def _play_next():
-        controller.play_next()
-
-    def _play_prev():
-        controller.play_prev()
-
-    def _on_stop():
-        controller.stop()
-
-    def _on_track_change(idx: int):
-        controller.on_track_change(idx)
-
-    def _on_complete():
-        controller.on_complete()
-
-    def _toggle_play_mode():
-        controller.cycle_play_mode()
-
-    def _on_toggle_play():
-        controller.toggle_playing()
-
-    def _on_seek(pos: int):
-        controller.update_position(pos)
-
-    def _on_set_volume(vol: float):
-        controller.set_volume(vol)
-
-    def _on_toggle_mute():
-        controller.toggle_mute()
-
-    def _on_toggle_fullscreen():
-        controller.toggle_fullscreen()
-
-    def _on_set_rate(rate: float):
-        controller.set_playback_rate(rate)
-
-    def _on_toggle_remaining_time():
-        controller.toggle_remaining_time()
-
-    def _on_position_change(ms: int):
-        controller.update_position(ms)
-
-    def _on_duration_change(ms: int):
-        controller.update_duration(ms)
-
-    def _on_sort(key: SortKey):
-        controller.set_sort_key(key)
-
-    def _on_remove(idx: int):
-        controller.remove_from_playlist(idx)
-
-    def _on_reorder(from_idx: int, to_idx: int):
-        controller.reorder(from_idx, to_idx)
-
-    def _on_clear_playlist():
-        controller.clear_playlist()
-
-    def _on_remove_recent(path: str):
-        if path == "":
-            controller.clear_recents()
-        else:
-            controller.remove_recent(path)
-        page.update()
-
-    # ─── File 操作 ───
+    # ─── 文件操作 ───
     async def _open_file():
-        picker = picker_ref.current
-        if not picker:
-            return
         try:
-            files = await picker.pick_files(
-                dialog_title="选择视频文件",
-                file_type=ft.FilePickerFileType.VIDEO,
-                allow_multiple=True,
+            paths = await file_dialog.pick_files(
+                title="选择视频文件",
+                extensions=VIDEO_FILTER,
+                multiple=True,
             )
-            if not files:
+            if not paths:
                 return
-            paths = [f.path or f.name for f in files]
-            items = make_playlist_items(paths)
+            items = make_playlist_items([str(p) for p in paths])
             if items:
                 controller.add_files(items, replace=True)
             else:
-                show_info_snackbar(page, "所选文件均不受支持")
-        except Exception as e:
-            handle_error(e, page=page, context="打开文件")
+                toast(page, "所选文件均不受支持", tone="warning")
+        except Exception as exc:
+            handle_error(exc, page=page, context="打开文件")
 
     async def _open_folder():
-        picker = picker_ref.current
-        if not picker:
-            return
         try:
-            folder = await picker.get_directory_path(
-                dialog_title="选择视频文件夹"
-            )
-            if not folder:
+            folder = await file_dialog.pick_directory(title="选择视频文件夹")
+            if folder is None:
                 return
-            items = scan_videos(folder)
+            items = scan_videos(str(folder))
             if not items:
-                show_info_snackbar(page, "该文件夹下未找到视频文件")
+                toast(page, "该文件夹下未找到视频文件", tone="warning")
                 return
             controller.add_files(items, replace=True)
-        except Exception as e:
-            handle_error(e, page=page, context="打开文件夹")
+        except Exception as exc:
+            handle_error(exc, page=page, context="打开文件夹")
 
     def _open_recent(path: str):
         try:
             controller.play_recent(path)
-        except Exception as e:
-            handle_error(e, page=page, context="打开最近文件")
+        except Exception as exc:
+            handle_error(exc, page=page, context="打开最近文件")
 
-    # ─── 排序后列表 ───
-    display = controller.get_sorted_playlist()
+    def _remove_recent(path: str):
+        if path == "":
+            controller.clear_recents()
+        else:
+            controller.remove_recent(path)
+        # 记录变更不走 _notify，本地触发一次重渲染即可。
+        set_tick(lambda t: t + 1)
 
     def _toggle_sidebar():
         set_sidebar_visible(lambda v: not v)
 
-    # ─── 卸载时保存设置 ───
-    def _on_unmount():
-        controller.save_settings()
-
-    ft.use_effect(_on_unmount, dependencies=[])
-
-    return ft.Row(
+    # ─── 视图 ───
+    return ui.Row(
         controls=[
             Sidebar(
                 display=display,
                 current_index=state.current_index,
                 sort_key=sort_key,
                 recents=recents,
-                on_play=_play_at,
-                on_remove=_on_remove,
-                on_reorder=_on_reorder,
-                on_sort=_on_sort,
+                on_play=controller.play_at,
+                on_remove=controller.remove_from_playlist,
+                on_reorder=controller.reorder,
+                on_sort=controller.set_sort_key,
                 on_open_file=_open_file,
                 on_open_folder=_open_folder,
                 on_open_recent=_open_recent,
-                on_clear_playlist=_on_clear_playlist,
-                on_remove_recent=_on_remove_recent,
+                on_clear_playlist=controller.clear_playlist,
+                on_remove_recent=_remove_recent,
                 on_toggle_visible=_toggle_sidebar,
                 sidebar_visible=sidebar_visible,
                 sidebar_width=sidebar_width,
@@ -367,23 +298,24 @@ def App(controller: PlayerController):
                 state=state,
                 engine=controller.engine,
                 play_nonce=play_nonce,
-                on_track_change=_on_track_change,
-                on_complete=_on_complete,
-                on_prev=_play_prev,
-                on_next=_play_next,
-                on_stop=_on_stop,
-                on_toggle_play_mode=_toggle_play_mode,
-                on_toggle_play=_on_toggle_play,
-                on_seek=_on_seek,
-                on_set_volume=_on_set_volume,
-                on_toggle_mute=_on_toggle_mute,
-                on_toggle_fullscreen=_on_toggle_fullscreen,
-                on_set_rate=_on_set_rate,
-                on_position_change=_on_position_change,
-                on_duration_change=_on_duration_change,
-                on_toggle_remaining_time=_on_toggle_remaining_time,
+                on_track_change=controller.on_track_change,
+                on_complete=controller.on_complete,
+                on_prev=controller.play_prev,
+                on_next=controller.play_next,
+                on_stop=controller.stop,
+                on_toggle_play_mode=controller.cycle_play_mode,
+                on_toggle_play=controller.toggle_playing,
+                on_seek=controller.update_position,
+                on_set_volume=controller.set_volume,
+                on_toggle_mute=controller.toggle_mute,
+                on_toggle_fullscreen=controller.toggle_fullscreen,
+                on_set_rate=controller.set_playback_rate,
+                on_position_change=controller.update_position,
+                on_duration_change=controller.update_duration,
+                on_toggle_remaining_time=controller.toggle_remaining_time,
                 on_toggle_sidebar=_toggle_sidebar,
                 sidebar_visible=sidebar_visible,
+                on_open_file=_open_file,
             ),
         ],
         expand=True,

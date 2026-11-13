@@ -1,9 +1,20 @@
-# -*- coding: utf-8 -*-
-"""
-PlayerArea 组件 — 视频显示区 + 自定义控制栏。
+"""播放区 —— 画面 + 事件编排 + 控制栏容器。
 
-声明式组件：接收播放器状态与回调，高频状态隔离在组件内部。
-控制栏采用紧凑单行布局，全屏/非全屏功能完全一致。
+组件只负责「播放器的一生」：起播、位置/时长同步、拖动 seek、播放模式切换后的
+恢复、全屏切换、全屏时控制栏自动隐藏。按钮怎么排、颜色怎么取，交给
+:mod:`components.control_bar` 与 :mod:`components.kit`。
+
+三条不变式（都是实测踩过的坑）：
+
+1. **全屏 / 窗口共用同一棵树**。切换全屏时只改属性、不重建 ``NativeVideo``，
+   底层 media_kit 只切原生窗口，播放位置与状态自然保持；不需要人为 seek/restore。
+2. **拖动期间屏蔽位置回写**。``engine.is_seeking`` 为真时忽略底层发来的
+   ``on_position_change``，否则松手前画面会一直往回跳。
+3. **状态快照用 ref 兜底**。事件回调可能拿到过期的闭包值，播放与否、当前位置
+   一律从 ``*_ref`` 读最新快照。
+
+高频状态（位置 / 时长 / 播放中 / 控制栏可见）留在组件内部，避免每 500ms 的
+位置更新触发整页重渲染。
 """
 
 from __future__ import annotations
@@ -12,38 +23,28 @@ import asyncio
 import logging
 from typing import Callable
 
-import flet as ft
-from flet_video import Video, VideoControlsMode
+import ui
+from ui.display.media import NativeVideo, VideoControlsMode, desktop_controls
 
-from configs.app_config import (
-    CONTROLS_AUTO_HIDE_MS,
-    PLAYBACK_SPEEDS,
-    VOLUME_WHEEL_STEP,
-)
-from configs.theme import (
-    C_BG_DARKEST,
-    C_BG_PANEL,
-    C_BORDER,
-    C_DIVIDER,
-    C_PRIMARY,
-    C_TEXT,
-    C_TEXT_SUB,
-    FONT_SIZE_SMALL,
-    FONT_SIZE_TINY,
-    ICON_SIZE_MD,
-    ICON_SIZE_LG,
-    SPACING_SM,
-    SPACING_MD,
-)
-from core.models import PlayMode, PlayerState
+from components.control_bar import ControlsActions, ControlsView, build_control_bar
+from components.kit import empty_stage
+from configs.app_config import CONTROLS_AUTO_HIDE_MS, VOLUME_WHEEL_STEP
+from configs.theme import C_BG_DARKEST, PALETTE
+from core.models import PlayerState
 from core.video_engine import VideoEngine
 from utils.error_handler import handle_error
-from utils.formatters import fmt_time, parse_ms, parse_idx
+from utils.formatters import (
+    fmt_time,
+    parse_idx,
+    parse_ms,
+    slider_position,
+    volume_after_wheel,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@ft.component
+@ui.component
 def PlayerArea(
     state: PlayerState,
     engine: VideoEngine,
@@ -63,40 +64,42 @@ def PlayerArea(
     on_position_change: Callable[[int], None],
     on_duration_change: Callable[[int], None],
     on_toggle_remaining_time: Callable,
-    on_toggle_sidebar: Callable = None,
+    on_toggle_sidebar: Callable | None = None,
     sidebar_visible: bool = True,
+    on_open_file: Callable | None = None,
 ):
-    """Player area component."""
-    position_ms, set_position_ms = ft.use_state(0)
-    duration_ms, set_duration_ms = ft.use_state(0)
-    is_playing, set_is_playing = ft.use_state(False)
-    auto_play_toggle_init = ft.use_ref(True)
-    controls_visible, set_controls_visible = ft.use_state(True)
-    _auto_hide_timer = ft.use_ref(None)
-    _is_switching = ft.use_ref(False)       # 全屏切换进行中标记
+    """播放区组件（根组件传入状态快照与意图回调）。"""
+    position_ms, set_position_ms = ui.use_state(0)
+    duration_ms, set_duration_ms = ui.use_state(0)
+    is_playing, set_is_playing = ui.use_state(False)
+    controls_visible, set_controls_visible = ui.use_state(True)
 
-    # ─── 状态快照 ref（供事件回调读取最新值，避免闭包过期）───
-    is_playing_ref = ft.use_ref(False)
-    position_ms_ref = ft.use_ref(0)
+    auto_play_toggle_init = ui.use_ref(True)
+    auto_hide_timer = ui.use_ref(None)
+    is_switching = ui.use_ref(False)      # 全屏切换进行中，屏蔽过时位置事件
+    fs_prev = ui.use_ref(False)
+
+    # ─── 事件回调读最新值的快照 ref ───
+    is_playing_ref = ui.use_ref(False)
+    position_ms_ref = ui.use_ref(0)
     is_playing_ref.current = is_playing
     position_ms_ref.current = position_ms
 
-    # ─── 同步外部播放状态（键盘快捷键等外部触发的播放/暂停）───
+    page = ui.context.page
+    engine.bind_page(page)
+
+    # ─── 外部触发的播放 / 暂停（键盘快捷键等）同步回本地 ───
     def _sync_playing():
         if state.is_playing != is_playing:
             set_is_playing(state.is_playing)
-    ft.use_effect(_sync_playing, dependencies=[state.is_playing])
 
-    page = ft.context.page
-    engine.bind_page(page)
+    ui.use_effect(_sync_playing, dependencies=[state.is_playing])
 
     # ─── 全屏控制栏自动隐藏 ───
-
     def _schedule_auto_hide():
         if not state.is_fullscreen:
             return
-
-        prev = _auto_hide_timer.current
+        prev = auto_hide_timer.current
         if prev is not None and not prev.done():
             prev.cancel()
 
@@ -107,17 +110,19 @@ def PlayerArea(
             except asyncio.CancelledError:
                 pass
 
-        _auto_hide_timer.current = asyncio.ensure_future(_delayed_hide())
+        auto_hide_timer.current = asyncio.ensure_future(_delayed_hide())
 
     def _show_controls_and_schedule():
         if state.is_fullscreen:
             set_controls_visible(True)
             _schedule_auto_hide()
 
-    ft.use_effect(lambda: _schedule_auto_hide() if state.is_fullscreen else None, dependencies=[state.is_fullscreen])
+    ui.use_effect(
+        lambda: _schedule_auto_hide() if state.is_fullscreen else None,
+        dependencies=[state.is_fullscreen],
+    )
 
-    # ─── 播放逻辑 ───
-
+    # ─── 起播：等播放器挂到页面再 jump_to + play ───
     def _do_play():
         if not state.playlist:
             return
@@ -126,72 +131,68 @@ def PlayerArea(
             v = engine.video
             if not v or not (0 <= state.current_index < len(state.playlist)):
                 return
+            # 控件挂载是异步的：首帧 / 会话恢复时 jump_to 可能先于挂载到达。
+            # 只重试「尚未挂到页面」这一类可恢复错误，其余错误立刻上报。
             for attempt in range(20):
                 try:
-                    _ = v.page
-                    break
-                except RuntimeError:
-                    await asyncio.sleep(0.1)
-            else:
-                logger.warning("Video 控件未能在 2 秒内挂载到页面")
-                return
-            try:
-                await v.jump_to(state.current_index)
-                await asyncio.sleep(0.05)
-                await v.play()
-                set_is_playing(True)
-            except Exception as e:
-                handle_error(e, page=page, context="播放视频")
+                    await v.jump_to(state.current_index)
+                    await asyncio.sleep(0.05)
+                    await v.play()
+                    set_is_playing(True)
+                    return
+                except RuntimeError as exc:
+                    if "added to the page" in str(exc).lower() and attempt < 19:
+                        await asyncio.sleep(0.1)
+                        continue
+                    handle_error(exc, page=page, context="播放视频")
+                    return
+                except Exception as exc:
+                    handle_error(exc, page=page, context="播放视频")
+                    return
+            logger.warning("播放器未能在 2 秒内挂载到页面")
 
         asyncio.ensure_future(_jump())
 
-    ft.use_effect(_do_play, dependencies=[play_nonce])
+    ui.use_effect(_do_play, dependencies=[play_nonce])
 
-    def _on_auto_play_toggle():
+    # ─── 播放模式切换后恢复进度 ───
+    def _on_mode_change():
         if auto_play_toggle_init.current:
             auto_play_toggle_init.current = False
             return
         if not state.has_video:
             return
-        cur_pos = position_ms_ref.current
-        cur_playing = is_playing_ref.current
-        engine.pending_restore = (cur_pos, cur_playing)
+        pos = position_ms_ref.current
+        was_playing = is_playing_ref.current
+        engine.pending_restore = (pos, was_playing)
 
         async def _restore():
             try:
-                await engine.restore_after_mode_change(cur_pos, cur_playing)
-            except Exception as e:
-                handle_error(e, page=page, context="恢复播放状态")
+                await engine.restore_after_mode_change(pos, was_playing)
+            except Exception as exc:
+                handle_error(exc, page=page, context="恢复播放状态")
 
         asyncio.ensure_future(_restore())
 
-    ft.use_effect(_on_auto_play_toggle, dependencies=[state.play_mode])
+    ui.use_effect(_on_mode_change, dependencies=[state.play_mode])
 
-    # ─── 全屏切换 ───
-    # 统一组件树结构下，Video 控件在切换时不被重建，
-    # 底层 media_kit 仅切换原生全屏窗口，播放位置和状态自然保持。
-    # 无需 seek/restore，避免人为卡顿。
-    _fs_prev = ft.use_ref(False)
-
+    # ─── 全屏切换：只标记，不重建控件 ───
     def _on_fullscreen_toggle():
-        prev = _fs_prev.current
-        _fs_prev.current = state.is_fullscreen
-        if prev == state.is_fullscreen:
+        prev = fs_prev.current
+        fs_prev.current = state.is_fullscreen
+        if prev == state.is_fullscreen or not state.has_video:
             return
-        if not state.has_video:
-            return
-        # 切换瞬间标记，屏蔽可能到来的过时 on_position_change 事件
-        _is_switching.current = True
+        is_switching.current = True
 
-        async def _clear_switch_flag():
-            # 短暂等待底层处理完 fullscreen 属性变更后解除屏蔽
+        async def _clear():
             await asyncio.sleep(0.15)
-            _is_switching.current = False
+            is_switching.current = False
 
-        asyncio.ensure_future(_clear_switch_flag())
+        asyncio.ensure_future(_clear())
 
-    ft.use_effect(_on_fullscreen_toggle, dependencies=[state.is_fullscreen])
+    ui.use_effect(_on_fullscreen_toggle, dependencies=[state.is_fullscreen])
 
+    # ─── 播放器事件 ───
     def _on_load(e):
         try:
             _handle_load()
@@ -199,8 +200,7 @@ def PlayerArea(
             handle_error(exc, page=page, context="视频加载")
 
     def _handle_load():
-        # 全屏切换期间跳过 on_load 恢复（统一树结构下不应触发，保险起见跳过）
-        if _is_switching.current:
+        if is_switching.current:
             return
         pending = engine.pending_restore
         if pending:
@@ -243,8 +243,7 @@ def PlayerArea(
 
     def _on_pos(e):
         try:
-            # 全屏切换期间屏蔽位置更新（底层可能发送过时/归零事件）
-            if _is_switching.current or engine.is_seeking:
+            if is_switching.current or engine.is_seeking:
                 return
             ms = parse_ms(e.data)
             set_position_ms(ms)
@@ -271,8 +270,7 @@ def PlayerArea(
     async def _toggle_play(e=None):
         try:
             await engine.play_or_pause()
-            new_playing = not is_playing_ref.current
-            set_is_playing(new_playing)
+            set_is_playing(not is_playing_ref.current)
             on_toggle_play()
         except Exception as exc:
             handle_error(exc, page=page, context="播放/暂停")
@@ -286,20 +284,19 @@ def PlayerArea(
         except Exception as exc:
             handle_error(exc, page=page, context="停止播放")
 
-    # ─── 进度条 ───
-
-    def _on_slider_start(e):
+    # ─── 进度条拖动 ───
+    def _on_seek_start(e):
         engine.is_seeking = True
         engine.seek_pos = position_ms_ref.current
 
-    def _on_slider_change(e):
-        pos = _slider_value(e)
+    def _on_seek_change(e):
+        pos = slider_position(e)
         if pos is not None:
             engine.seek_pos = pos
             set_position_ms(pos)
 
-    def _on_slider_end(e):
-        pos = _slider_value(e)
+    def _on_seek_end(e):
+        pos = slider_position(e)
         if pos is None:
             pos = engine.seek_pos
         set_position_ms(pos)
@@ -315,101 +312,40 @@ def PlayerArea(
         asyncio.ensure_future(_do_seek())
         on_seek(pos)
 
-    def _slider_value(e) -> int | None:
-        """从 Slider 事件中提取位置值（毫秒）。"""
-        try:
-            if e.data is not None:
-                return int(float(e.data))
-        except (TypeError, ValueError):
-            pass
-        try:
-            ctrl = getattr(e, "control", None)
-            if ctrl is not None and getattr(ctrl, "value", None) is not None:
-                return int(float(ctrl.value))
-        except (TypeError, ValueError, AttributeError):
-            pass
-        return None
-
     # ─── 音量 ───
-
     async def _vol_change(e):
+        # 事件先送新值，control.value 的回写可能晚一帧，以 e.data 为准。
         try:
-            val = float(e.data)
+            value = float(e.data)
         except (TypeError, ValueError):
             return
-        on_set_volume(val)
+        on_set_volume(value)
 
-    def _on_vol_wheel(e: ft.ScrollEvent):
-        if e.scroll_delta is None:
-            return
-        delta = e.scroll_delta.y if hasattr(e.scroll_delta, 'y') else 0
-        if delta < 0:
-            new_vol = min(100.0, state.volume + VOLUME_WHEEL_STEP)
-        elif delta > 0:
-            new_vol = max(0.0, state.volume - VOLUME_WHEEL_STEP)
-        else:
-            return
-        on_set_volume(new_vol)
+    def _on_vol_wheel(e: ui.ScrollEvent):
+        delta = getattr(e.scroll_delta, "y", 0) if e.scroll_delta is not None else 0
+        new_vol = volume_after_wheel(state.volume, delta, VOLUME_WHEEL_STEP)
+        if new_vol != state.volume:
+            on_set_volume(new_vol)
 
-    # ─── 倍速 ───
+    # ─── 画面区悬停：全屏时唤醒控制栏 ───
+    def _on_video_area_hover(e: ui.HoverEvent):
+        if state.is_fullscreen and e.local_position is not None:
+            _show_controls_and_schedule()
 
-    def _rate_label(r: float) -> str:
-        return f"{r:g}x"
-
-    # ─── UI 构建 ───
-
-    has_video = state.has_video
-    title = state.current_item.title if has_video else ""
+    # ─── 原生播放器 ───
     video_playlist = VideoEngine.build_playlist(
         state.playlist, state.play_mode, state.current_index
     )
     playlist_mode = VideoEngine.get_playlist_mode(state.play_mode)
-    slider_max = max(duration_ms, 1)
-    play_mode_icons = {
-        PlayMode.SEQUENCE: ft.Icons.PLAY_ARROW,
-        PlayMode.REPEAT_ALL: ft.Icons.REPEAT,
-        PlayMode.REPEAT_ONE: ft.Icons.REPEAT_ONE,
-        PlayMode.SHUFFLE: ft.Icons.SHUFFLE,
-    }
-    play_mode_labels = {
-        PlayMode.SEQUENCE: "顺序播放",
-        PlayMode.REPEAT_ALL: "列表循环",
-        PlayMode.REPEAT_ONE: "单曲循环",
-        PlayMode.SHUFFLE: "随机播放",
-    }
-    current_mode_icon = play_mode_icons.get(state.play_mode, ft.Icons.PLAY_ARROW)
-    current_mode_label = play_mode_labels.get(state.play_mode, "顺序播放")
-
-    def _icon_btn(icon, on_click, tooltip="", enabled=True, color=None, size=ICON_SIZE_MD):
-        return ft.IconButton(
-            icon=icon,
-            icon_color=color or C_TEXT,
-            on_click=on_click,
-            tooltip=tooltip,
-            disabled=not enabled,
-            icon_size=size,
-            style=ft.ButtonStyle(padding=ft.Padding.all(4)),
-        )
-
-    # ─── 时间显示 ───
-
-    if state.show_remaining_time and duration_ms > 0:
-        time_text = f"-{fmt_time(max(0, duration_ms - position_ms))}"
-    else:
-        time_text = fmt_time(position_ms)
-
-    def _on_time_click(e):
-        on_toggle_remaining_time()
-
     slider_label = fmt_time(position_ms) if engine.is_seeking else ""
 
-    video_control = Video(
+    video_control = NativeVideo(
         ref=engine.ref,
         playlist=video_playlist,
         playlist_mode=playlist_mode,
         controls={
             VideoControlsMode.NORMAL: None,
-            VideoControlsMode.FULLSCREEN: VideoEngine.build_fullscreen_controls(),
+            VideoControlsMode.FULLSCREEN: desktop_controls(PALETTE),
         },
         fullscreen=state.is_fullscreen,
         volume=state.volume,
@@ -426,190 +362,43 @@ def PlayerArea(
         expand=True,
     )
 
-    # ─── 控制栏（紧凑单行布局，全屏/非全屏一致）───
-
-    def _build_controls_bar():
-        return ft.Container(
-            content=ft.Column(
-                controls=[
-                    # 进度条行
-                    ft.Row(
-                        controls=[
-                            ft.GestureDetector(
-                                content=ft.Text(
-                                    time_text,
-                                    color=C_TEXT_SUB,
-                                    size=FONT_SIZE_TINY,
-                                ),
-                                on_tap=_on_time_click,
-                            ),
-                            ft.Slider(
-                                min=0,
-                                max=slider_max,
-                                value=position_ms,
-                                active_color=C_PRIMARY,
-                                inactive_color=C_BORDER,
-                                thumb_color=C_PRIMARY,
-                                expand=True,
-                                label=slider_label,
-                                on_change_start=_on_slider_start,
-                                on_change=_on_slider_change,
-                                on_change_end=_on_slider_end,
-                            ),
-                            ft.Text(
-                                fmt_time(duration_ms),
-                                color=C_TEXT_SUB,
-                                size=FONT_SIZE_TINY,
-                            ),
-                        ],
-                        spacing=SPACING_SM,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    # 按钮行（单行紧凑）
-                    ft.Row(
-                        controls=[
-                            # 侧边栏切换（仅非全屏）
-                            _icon_btn(
-                                ft.Icons.MENU_ROUNDED if not sidebar_visible else ft.Icons.MENU_OPEN_ROUNDED,
-                                lambda e: on_toggle_sidebar() if on_toggle_sidebar else None,
-                                "侧边栏",
-                                color=C_TEXT_SUB,
-                                size=ICON_SIZE_MD,
-                            ) if not state.is_fullscreen else ft.Container(width=0),
-                            # 上一曲
-                            _icon_btn(
-                                ft.Icons.SKIP_PREVIOUS_ROUNDED,
-                                lambda e: on_prev(),
-                                "上一曲",
-                                enabled=state.has_prev,
-                            ),
-                            # 播放/暂停
-                            _icon_btn(
-                                ft.Icons.PAUSE_ROUNDED if is_playing else ft.Icons.PLAY_ARROW_ROUNDED,
-                                _toggle_play,
-                                "播放/暂停",
-                                enabled=has_video,
-                                color=C_PRIMARY,
-                                size=ICON_SIZE_LG,
-                            ),
-                            # 下一曲
-                            _icon_btn(
-                                ft.Icons.SKIP_NEXT_ROUNDED,
-                                lambda e: on_next(),
-                                "下一曲",
-                                enabled=state.has_next,
-                            ),
-                            # 停止
-                            _icon_btn(
-                                ft.Icons.STOP_CIRCLE_OUTLINED,
-                                _stop,
-                                "停止",
-                                enabled=has_video,
-                                color=C_TEXT_SUB,
-                            ),
-                            # 播放模式
-                            _icon_btn(
-                                current_mode_icon,
-                                lambda e: on_toggle_play_mode(),
-                                current_mode_label,
-                                enabled=has_video,
-                                color=C_PRIMARY,
-                            ),
-                            ft.Container(width=SPACING_SM),
-                            # 倍速
-                            ft.PopupMenuButton(
-                                content=ft.Text(
-                                    _rate_label(state.playback_rate),
-                                    color=C_PRIMARY,
-                                    size=FONT_SIZE_SMALL,
-                                    weight=ft.FontWeight.W_600,
-                                ),
-                                items=[
-                                    ft.PopupMenuItem(
-                                        content=ft.Text(
-                                            _rate_label(s),
-                                            color=C_PRIMARY if s == state.playback_rate else C_TEXT,
-                                            size=FONT_SIZE_SMALL,
-                                        ),
-                                        icon=ft.Icons.CHECK if s == state.playback_rate else None,
-                                        on_click=lambda e, s=s: on_set_rate(s),
-                                    )
-                                    for s in PLAYBACK_SPEEDS
-                                ],
-                                bgcolor=C_BG_PANEL,
-                                menu_position=ft.PopupMenuPosition.UNDER,
-                            ),
-                            ft.Container(expand=True),
-                            # 标题（中间，仅非全屏）
-                            ft.Container(
-                                content=ft.Text(
-                                    title,
-                                    color=C_TEXT_SUB,
-                                    size=FONT_SIZE_TINY,
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
-                                ),
-                                expand=True if state.is_fullscreen else False,
-                                visible=has_video and state.is_fullscreen,
-                            ) if state.is_fullscreen else ft.Container(expand=True),
-                            # 音量
-                            ft.GestureDetector(
-                                content=_icon_btn(
-                                    ft.Icons.VOLUME_OFF if state.muted or state.volume == 0 else ft.Icons.VOLUME_UP,
-                                    lambda e: on_toggle_mute(),
-                                    "静音",
-                                    color=C_TEXT_SUB,
-                                ),
-                                on_scroll=_on_vol_wheel,
-                            ),
-                            ft.Slider(
-                                min=0,
-                                max=100,
-                                value=0 if state.muted else state.volume,
-                                active_color=C_PRIMARY,
-                                inactive_color=C_BORDER,
-                                thumb_color=C_PRIMARY,
-                                width=80,
-                                on_change=_vol_change,
-                            ),
-                            # 全屏
-                            _icon_btn(
-                                ft.Icons.FULLSCREEN if not state.is_fullscreen else ft.Icons.FULLSCREEN_EXIT,
-                                lambda e: on_toggle_fullscreen(),
-                                "全屏",
-                                color=C_TEXT_SUB,
-                            ),
-                        ],
-                        spacing=SPACING_SM,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                ],
-                spacing=0,
+    # ─── 控制栏：一份实例，窗口模式贴底、全屏模式浮在画面底部 ───
+    controls_bar = build_control_bar(
+        ControlsView(
+            state=state,
+            is_playing=is_playing,
+            position_ms=position_ms,
+            duration_ms=duration_ms,
+            sidebar_visible=sidebar_visible,
+            slider_label=slider_label,
+        ),
+        ControlsActions(
+            on_prev=lambda e=None: on_prev(),
+            on_next=lambda e=None: on_next(),
+            on_toggle_play=_toggle_play,
+            on_stop=_stop,
+            on_toggle_play_mode=lambda e=None: on_toggle_play_mode(),
+            on_set_rate=on_set_rate,
+            on_toggle_mute=lambda e=None: on_toggle_mute(),
+            on_set_volume=_vol_change,
+            on_toggle_fullscreen=lambda e=None: on_toggle_fullscreen(),
+            on_toggle_sidebar=lambda e=None: (
+                on_toggle_sidebar() if on_toggle_sidebar else None
             ),
-            bgcolor=C_BG_PANEL,
-            border=ft.Border.only(top=ft.BorderSide(1, C_DIVIDER)),
-            padding=ft.Padding.only(left=6, right=8, top=2, bottom=4),
-        )
+            on_toggle_remaining_time=lambda e=None: on_toggle_remaining_time(),
+            on_seek_start=_on_seek_start,
+            on_seek_change=_on_seek_change,
+            on_seek_end=_on_seek_end,
+            on_volume_wheel=_on_vol_wheel,
+        ),
+    )
 
-    # ─── 全屏底部控制栏悬停区域 ───
-
-    def _on_video_area_hover(e: ft.HoverEvent):
-        if not state.is_fullscreen:
-            return
-        if e.local_position is None:
-            return
-        _show_controls_and_schedule()
-
-    # ─── 控制栏（全屏/非全屏共用同一实例）───
-    controls_bar = _build_controls_bar()
-
-    # 统一的组件树：全屏/非全屏共用同一根结构，避免切换时 Video 控件被重建
-    return ft.Column(
+    return ui.Column(
         controls=[
-            ft.Stack(
+            ui.Stack(
                 controls=[
-                    ft.GestureDetector(
-                        content=ft.Container(
+                    ui.GestureDetector(
+                        content=ui.Container(
                             content=video_control,
                             expand=True,
                             bgcolor=C_BG_DARKEST,
@@ -619,44 +408,24 @@ def PlayerArea(
                         on_scroll=_on_vol_wheel,
                         expand=True,
                     ),
-                    ft.Container(
-                        content=ft.Column(
-                            controls=[
-                                ft.Icon(
-                                    ft.Icons.VIDEO_LIBRARY_OUTLINED,
-                                    size=48,
-                                    color=C_TEXT_SUB,
-                                ),
-                                ft.Text(
-                                    "打开视频文件",
-                                    color=C_TEXT_SUB,
-                                    size=FONT_SIZE_SMALL,
-                                ),
-                                ft.Text(
-                                    "MP4 / MKV / AVI / FLV / MOV ...",
-                                    color=C_TEXT_SUB,
-                                    size=FONT_SIZE_TINY,
-                                ),
-                            ],
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        ),
+                    ui.Container(
+                        content=empty_stage(on_open=on_open_file),
                         expand=True,
-                        alignment=ft.Alignment.CENTER,
-                        visible=not has_video,
+                        alignment=ui.Alignment.CENTER,
+                        visible=not state.has_video,
                     ),
-                    # 全屏模式：控制栏叠在视频底部（自动隐藏）
-                    ft.Container(
-                        content=controls_bar if state.is_fullscreen else ft.Container(),
-                        alignment=ft.Alignment.BOTTOM_CENTER,
+                    ui.Container(
+                        content=controls_bar
+                        if state.is_fullscreen
+                        else ui.Container(),
+                        alignment=ui.Alignment.BOTTOM_CENTER,
                         visible=state.is_fullscreen and controls_visible,
                         expand=True,
                     ),
                 ],
                 expand=True,
             ),
-            # 非全屏模式：控制栏固定在底部
-            controls_bar if not state.is_fullscreen else ft.Container(height=0),
+            controls_bar if not state.is_fullscreen else ui.Container(height=0),
         ],
         expand=True,
         spacing=0,

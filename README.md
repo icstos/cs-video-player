@@ -2,20 +2,26 @@
 
 [中文](README.zh-CN.md) | English
 
-A Windows desktop local video player built with Python 3.12+, Flet 0.86.5, and flet-video.
-Inspired by PotPlayer's interaction design and VLC's format versatility.
+A Windows desktop local video player built with Python 3.12+ and **cs-ui** — a
+declarative component library on top of Flet 1.1.2. Inspired by PotPlayer's
+interaction design and VLC's format versatility.
+
+The application depends on `cs-ui` only; it never imports `flet` or `flet-video`
+directly. All widgets, design tokens and the native media facade come from the
+`ui` package.
 
 ## Features
 
 - **Full format support** — MP4, MKV, AVI, MOV, FLV, WebM, WMV, MPG, TS, RMVB, and more
-- **Declarative UI** — Built with `@ft.component` hooks API (`use_state`, `use_effect`, `use_ref`)
+- **Declarative UI** — `@ui.component` hooks (`use_state`, `use_effect`, `use_memo`, `use_ref`, `use_context`)
+- **One source of design** — colors, spacing, type scale and icon sizes derive from `ui.core.tokens` + `ui.MediaPalette`
 - **Playlist management** — Add files/folders, sort by name/size/date, drag reorder
 - **Multi-file selection** — Pick multiple files at once or open an entire folder
 - **Playback modes** — Sequence, Loop All, Loop One, Shuffle
 - **Playback controls** — Play/pause, stop, prev/next, seek ±10s (Shift for ±20s)
 - **Progress bar** — Drag to seek with live time label; click time to toggle remaining-time display
 - **Volume system** — Slider, mute toggle, mouse wheel adjustment, persistent
-- **Playback speed** — 0.25x–16x with quick preset buttons (0.25x–4.0x)
+- **Playback speed** — 0.25x–16x via a compact dropdown
 - **Fullscreen** — Double-click video or press `F`/`F11`; control bar auto-hides, shows on mouse move to bottom
 - **Keyboard shortcuts** — Space, ←/→, ↑/↓, [/], M, F, F11, N, P, S, T, Ctrl+O, Ctrl+Shift+O, Escape, Delete
 - **Recent files** — Persistent history of last 30 opened files
@@ -28,36 +34,36 @@ Inspired by PotPlayer's interaction design and VLC's format versatility.
 
 ```
 cs-video-player/
-  main.py                    # Entry point
-  pyproject.toml             # Project config & dependencies
+  main.py                    # Entry: ui.run, theme, window, page.render
+  pyproject.toml             # Depends on cs-ui only
   configs/
-    app_config.py            # Constants & configuration
-    theme.py                 # Color palette & typography
+    app_config.py            # Business constants & configuration
+    theme.py                 # Design layer: cs-ui tokens -> product semantics
   core/
     models.py                # Data models (PlaylistItem, PlayerState, enums)
-    video_engine.py          # flet-video wrapper (async-safe)
+    video_engine.py          # NativeVideo wrapper (async-safe, pure mapping)
     player_controller.py     # State management bridge
   components/
-    app.py                   # Root component (keyboard, FilePicker, session restore, layout)
+    kit.py                   # Product UI vocabulary (pure widget factories)
+    control_bar.py           # Compact control bar (TimeSlider / VolumeControl / SpeedMenu)
+    app.py                   # Root component (keyboard, FileDialog, session restore)
     sidebar.py               # Playlist, file open, recents, drag reorder
-    player_area.py           # Video display + control bar
-    ui_helpers.py            # Reusable widget factories
-  utils/
-    formatters.py            # Time/size formatting, event data parsing
-    storage.py               # JSON persistence (recents, settings, positions, session)
-    file_scanner.py          # Folder scanning & batch item creation
+    player_area.py           # Video display + playback event orchestration
+    ui_helpers.py            # Legacy compatibility shim -> kit
+  utils/                     # Pure functions: formatting, storage, scanner, errors
+  scripts/
+    test_logic.py            # Pure-logic regression (21 tests, no window)
+    verify_app.py            # Hidden-window render smoke + optional screenshot
 ```
+
+`kit.py` is the only place that assembles cs-ui widgets into this product's
+vocabulary; views describe structure and copy, never colors or font sizes.
 
 ## Installation
 
 ```bash
-pip install .
-```
-
-Or for development:
-
-```bash
-pip install -e .
+pip install .          # pulls cs-ui (>=0.2.0) with a compatible flet-video
+pip install -e .       # development
 ```
 
 ## Usage
@@ -84,12 +90,31 @@ python main.py
 | `Esc` | Exit fullscreen |
 | `Delete` | Remove current from playlist |
 
+## Design & Verification
+
+The design layer is **recomputable**: one brand color (`BRAND_PRIMARY`) is fed to
+`ui.MediaPalette.derive(brand, mode="dark")`; the resulting scheme is shared by
+the page theme, the custom control bar and the native fullscreen controls.
+`configs.theme.palette_snapshot()` prints the whole table, and ui-mcp indexes
+every public widget for lookup.
+
+```bash
+python scripts/test_logic.py                                  # 21 pure-logic tests
+python scripts/verify_app.py                                   # hidden-window render smoke
+python scripts/verify_app.py --demo --shot output/app_with_list.png
+```
+
+`verify_app.py` renders the real component tree in a hidden window, checks that
+the file-dialog service is attached, and can export a UI screenshot. It never
+writes to the user's `~/.cs_video_player` data.
+
 ## Tech Stack
 
 - **Python 3.12+**
-- **Flet 0.86.5** — Declarative UI framework (`@ft.component`, hooks API)
-- **flet-video 0.86.5** — Video playback control (mpv/libmpv backend)
-- **OOP design** — Controller/Engine/Model separation
+- **cs-ui ≥ 0.2.0** — component library on Flet 1.1.2; the single framework dependency
+- **`@ui.component` hooks** — declarative state, memoized sorting, effect cleanups
+- **Design tokens** — `ui.core.tokens` + `ui.MediaPalette` (computed colors, 4px grid, type scale)
+- **OOP design** — Controller / Engine / Model separation; UI is a pure projection of state
 - **State-driven UI** — `PlayerState` as single source of truth, reactive updates via listener callbacks
 
 ## Architecture
@@ -97,12 +122,12 @@ python main.py
 ```
                     ┌──────────────────┐
                     │   main.py        │
-                    │   (entry point)  │
+                    │  (ui.run/theme)  │
                     └────────┬─────────┘
                              │
                     ┌────────▼─────────┐
                     │   App component   │
-                    │ (keyboard, picker)│
+                    │ (keyboard, dialog)│
                     └────────┬─────────┘
                              │
               ┌──────────────┼──────────────┐
@@ -121,6 +146,6 @@ python main.py
                          │
               ┌──────────▼──────────┐
               │   VideoEngine        │
-              │ (flet-video wrapper) │
+              │ (cs-ui media facade) │
               └─────────────────────┘
 ```

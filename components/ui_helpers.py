@@ -1,23 +1,32 @@
-"""
-通用 UI 辅助函数 — 可复用的控件工厂。
+"""兼容层 —— 旧版 UI 辅助函数，全部改为经 ``ui`` 门面构造。
+
+**新代码请用 :mod:`components.kit`**：那里的构件按产品语汇命名、配色来自
+cs-ui 色表、参数也更克制。本模块只保留旧名字，避免外部脚本 / 早期示例失效，
+不再新增函数。
+
+唯一还使用原生控件的是 ``styled_slider``：cs-ui 的 ``ui.Slider`` 是 observable
+（要构造后调 ``.ui()``），与旧函数「返回一个控件」的契约不同；这里用 cs-ui 门面
+提供的 ``ui.NativeSlider``，应用侧不需要知道底层框架包。
 """
 
 from __future__ import annotations
 
 from typing import Callable, Optional
 
-import flet as ft
+import ui
 
 from configs.theme import (
     C_BORDER,
     C_PRIMARY,
     C_TEXT,
-    C_TEXT_SUB,
-    FONT_SIZE_BODY,
     FONT_SIZE_SMALL,
-    FONT_SIZE_TINY,
     ICON_SIZE_LG,
+    SPACING_LG,
+    SPACING_SM,
 )
+from components.kit import empty_list, hairline, icon_action
+
+__all__ = ["divider", "empty_state", "icon_button", "styled_slider", "text_label"]
 
 
 def icon_button(
@@ -28,15 +37,15 @@ def icon_button(
     enabled: bool = True,
     color: Optional[str] = None,
     icon_size: int = ICON_SIZE_LG,
-) -> ft.IconButton:
-    """构建标准图标按钮。"""
-    return ft.IconButton(
-        icon=icon,
-        icon_color=color or C_TEXT,
-        on_click=on_click,
+) -> ui.IconButton:
+    """标准图标按钮 → kit.icon_action。"""
+    return icon_action(
+        icon,
+        on_click,
         tooltip=tooltip,
         disabled=not enabled,
-        icon_size=icon_size,
+        color=color,
+        size=icon_size,
     )
 
 
@@ -45,18 +54,18 @@ def text_label(
     *,
     color: str = C_TEXT,
     size: int = FONT_SIZE_SMALL,
-    weight: ft.FontWeight = ft.FontWeight.W_400,
+    weight: ui.FontWeight = ui.FontWeight.W_400,
     max_lines: int = 0,
-    overflow: ft.TextOverflow = ft.TextOverflow.ELLIPSIS,
-    text_align: ft.TextAlign = ft.TextAlign.LEFT,
-) -> ft.Text:
-    """构建标准文本标签。"""
-    return ft.Text(
+    overflow: ui.TextOverflow = ui.TextOverflow.ELLIPSIS,
+    text_align: ui.TextAlign = ui.TextAlign.LEFT,
+) -> ui.Text:
+    """标准文本标签（保留旧签名，含 overflow / text_align）。"""
+    return ui.Text(
         value=value,
         color=color,
         size=size,
         weight=weight,
-        max_lines=max_lines,
+        max_lines=max_lines or None,
         overflow=overflow,
         text_align=text_align,
     )
@@ -72,9 +81,9 @@ def styled_slider(
     on_change_end: Callable | None = None,
     expand: bool = False,
     width: Optional[float] = None,
-) -> ft.Slider:
-    """构建标准滑块。"""
-    return ft.Slider(
+):
+    """标准滑块（cs-ui 门面里的原生滑块）。"""
+    return ui.NativeSlider(
         min=min_val,
         max=max_val,
         value=value,
@@ -94,18 +103,17 @@ def divider(
     horizontal: bool = True,
     color: str = C_BORDER,
     thickness: float = 1,
-) -> ft.Container:
-    """构建分割线。"""
+) -> ui.Container:
+    """分割线 → kit.hairline（thickness 保留但统一走 1px 设计）。"""
+    line = hairline()
     if horizontal:
-        return ft.Container(
-            height=thickness,
-            bgcolor=color,
-            margin=ft.Margin.symmetric(horizontal=12, vertical=4),
-        )
-    return ft.Container(
+        return line
+    return ui.Container(
         width=thickness,
         bgcolor=color,
-        margin=ft.Margin.symmetric(vertical=12, horizontal=4),
+        margin=ui.Margin.symmetric(
+            vertical=SPACING_LG, horizontal=SPACING_SM
+        ),
     )
 
 
@@ -114,22 +122,6 @@ def empty_state(
     message: str,
     *,
     sub_message: str = "",
-) -> ft.Container:
-    """构建空状态占位。"""
-    controls: list[ft.Control] = [
-        ft.Icon(icon, size=56, color=C_TEXT_SUB),
-        ft.Text(message, color=C_TEXT_SUB, size=FONT_SIZE_BODY),
-    ]
-    if sub_message:
-        controls.append(
-            ft.Text(sub_message, color=C_TEXT_SUB, size=FONT_SIZE_TINY)
-        )
-    return ft.Container(
-        content=ft.Column(
-            controls=controls,
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        expand=True,
-        alignment=ft.Alignment.CENTER,
-    )
+) -> ui.Container:
+    """空状态占位 → kit.empty_list（图标参数保留以兼容旧调用）。"""
+    return empty_list(message, hint=sub_message)

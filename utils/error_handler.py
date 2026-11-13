@@ -1,26 +1,25 @@
-"""
-全局异常处理 — 友好的用户提示与日志记录。
+"""全局异常处理 —— 把底层异常翻译成一句人话，并给出一次性回执。
 
-将底层异常分类映射为用户可理解的提示信息，
-通过 SnackBar 弹出通知，同时记录到日志。
+三层职责分得很清楚：
+
+* :func:`classify_error` 是纯函数（异常 → 中文提示），可单测；
+* :func:`show_error` / :func:`show_info` 只负责展示，走 cs-ui 的 ``Message``
+  （顶部居中、同款合并、自动消失）。不再用 SnackBar：弹层栈一次只挂一条，
+  连续两次失败不该叠两条提示把画面压住；
+* :func:`handle_error` 组合日志 + 展示 + 返回提示，是业务代码唯一该调的入口。
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
-import flet as ft
-
-from configs.theme import C_BG_PANEL, C_RED, C_TEXT
-
-if TYPE_CHECKING:
-    from flet import Page
+import ui
+from ui import Message, StyleType
 
 logger = logging.getLogger(__name__)
 
-# ─── 错误分类与友好提示 ───
-
+# ─── 错误分类与友好提示（顺序即优先级） ───
 _ERROR_PATTERNS: list[tuple[tuple[str, ...], str]] = [
     (
         ("codec", "decoder", "demuxer", "no video", "unsupported codec"),
@@ -66,15 +65,7 @@ _ERROR_PATTERNS: list[tuple[tuple[str, ...], str]] = [
 
 
 def classify_error(exc: BaseException | str) -> str:
-    """
-    根据异常信息推断友好的错误提示。
-
-    Args:
-        exc: 异常对象或错误消息字符串。
-
-    Returns:
-        面向用户的友好提示文本。
-    """
+    """根据异常信息推断面向用户的友好提示。"""
     msg = str(exc).lower()
     for keywords, friendly in _ERROR_PATTERNS:
         if any(kw in msg for kw in keywords):
@@ -82,89 +73,46 @@ def classify_error(exc: BaseException | str) -> str:
     return f"播放出错：{exc}" if exc else "发生未知错误"
 
 
-def show_error_snackbar(
-    page: ft.Page,
-    message: str,
-    *,
-    duration: int = 4000,
-) -> None:
-    """
-    在页面底部弹出错误提示 SnackBar。
-
-    Args:
-        page: Flet Page 实例。
-        message: 要显示的错误提示文本。
-        duration: 显示时长（毫秒）。
-    """
+def show_error(page: ui.Page, message: str, *, duration: int = 4000) -> None:
+    """错误回执：红色语气、四秒自走、同款合并。"""
     try:
-        page.show_dialog(
-            ft.SnackBar(
-                content=ft.Row(
-                    controls=[
-                        ft.Icon(ft.Icons.ERROR_OUTLINE, color=C_RED, size=18),
-                        ft.Text(message, color=C_TEXT, size=13, expand=True),
-                    ],
-                    spacing=8,
-                ),
-                bgcolor=C_BG_PANEL,
-                duration=duration,
-            )
-        )
+        Message(message, style_type=StyleType.ERROR, duration=duration).show(page)
     except Exception:
-        logger.exception("无法显示错误提示 SnackBar")
+        logger.exception("无法显示错误提示")
 
 
-def show_info_snackbar(
-    page: ft.Page,
-    message: str,
-    *,
-    duration: int = 3000,
-) -> None:
-    """在页面底部弹出信息提示 SnackBar。"""
+def show_info(page: ui.Page, message: str, *, duration: int = 3000) -> None:
+    """信息回执：中性语气、三秒自走。"""
     try:
-        page.show_dialog(
-            ft.SnackBar(
-                content=ft.Text(message, color=C_TEXT, size=13),
-                bgcolor=C_BG_PANEL,
-                duration=duration,
-            )
-        )
+        Message(message, style_type=StyleType.INFO, duration=duration).show(page)
     except Exception:
-        logger.exception("无法显示信息提示 SnackBar")
+        logger.exception("无法显示信息提示")
+
+
+# 兼容旧调用点的别名（内部实现已换成 ui.Message）。
+show_error_snackbar = show_error
+show_info_snackbar = show_info
 
 
 def handle_error(
     exc: BaseException,
-    page: Optional[ft.Page] = None,
+    page: Optional[ui.Page] = None,
     *,
     context: str = "",
     show_user: bool = True,
 ) -> str:
-    """
-    统一异常处理：记录日志 + 可选弹出用户提示。
-
-    Args:
-        exc: 捕获到的异常。
-        page: Flet Page 实例（传入则弹出 SnackBar）。
-        context: 异常发生的上下文描述（用于日志）。
-        show_user: 是否向用户弹出提示。
-
-    Returns:
-        分类后的友好提示文本。
-    """
+    """统一异常处理：日志 + 可选回执，并返回分类后的提示文本。"""
     friendly = classify_error(exc)
     log_msg = f"{context}: {exc}" if context else str(exc)
     logger.error("%s", log_msg, exc_info=exc)
 
     if show_user and page is not None:
-        show_error_snackbar(page, friendly)
-
+        show_error(page, friendly)
     return friendly
 
 
-def safe_async(coro_func, *, context: str = "", page: Optional[ft.Page] = None):
-    """
-    包装一个异步协程函数，捕获所有异常并处理。
+def safe_async(coro_func, *, context: str = "", page: Optional[ui.Page] = None):
+    """包装异步函数，捕获所有异常并交给 :func:`handle_error`。
 
     用法::
 

@@ -1,9 +1,14 @@
-"""
-视频播放引擎。
-封装 flet-video 的底层 API，提供安全、可恢复的播放操作。
+"""视频播放引擎 —— 对原生播放器的异步安全封装。
 
-关键: Video 控件的 volume / playback_rate / muted / fullscreen 均为属性（property），
-需要赋值后调用 page.update() 刷新；播放控制方法（play / pause / seek 等）为 async。
+边界：这一层只懂「播放器能做什么」（播放 / 跳转 / 音量 / 全屏 / 截图），
+不懂界面上按钮长什么样、播放列表怎么排序。所有底层类型与控件配色都从
+``ui`` 门面取（:mod:`ui.display.media`），应用侧不再直接依赖 ``flet`` 或
+``flet-video``。
+
+关键约定：``NativeVideo`` 的 volume / playback_rate / muted / fullscreen 是
+**属性**，赋值后要 ``page.update()``；播放控制方法（play / pause / seek 等）
+是 async。全部操作都经 :meth:`VideoEngine._run` 收敛异常，底层失效时记日志并
+通知 UI，而不是让异步任务悄悄死掉。
 """
 
 from __future__ import annotations
@@ -12,15 +17,10 @@ import asyncio
 import logging
 from typing import Callable, Optional
 
-import flet as ft
-from flet_video import (
-    MaterialDesktopVideoControls,
-    PlaylistMode,
-    Video,
-    VideoMedia,
-)
+import ui
+from ui.display.media import NativeVideo, PlaylistMode, VideoMedia, desktop_controls
 
-from configs.theme import C_BORDER, C_HOVER, C_PRIMARY, C_TEXT
+from configs.theme import PALETTE
 from core.models import PlayMode, PlaylistItem
 from utils.formatters import to_uri
 
@@ -30,22 +30,22 @@ ErrorCallback = Callable[[str, str], None]  # (label, error_message)
 
 
 class VideoEngine:
-    """对 flet_video.Video 的异步安全封装。"""
+    """对 :class:`ui.NativeVideo` 的异步安全封装。"""
 
     def __init__(self) -> None:
-        self._video_ref: ft.Ref[Video] = ft.Ref[Video]()
+        self._video_ref: ui.Ref[NativeVideo] = ui.Ref[NativeVideo]()
         self._is_seeking: bool = False
         self._seek_pos: int = 0
         self._pending_restore: Optional[tuple[int, bool]] = None
-        self._page: Optional[ft.Page] = None
+        self._page: Optional[ui.Page] = None
         self._error_callback: Optional[ErrorCallback] = None
 
     @property
-    def ref(self) -> ft.Ref[Video]:
+    def ref(self) -> ui.Ref[NativeVideo]:
         return self._video_ref
 
     @property
-    def video(self) -> Optional[Video]:
+    def video(self) -> Optional[NativeVideo]:
         return self._video_ref.current
 
     @property
@@ -72,7 +72,7 @@ class VideoEngine:
     def pending_restore(self, value: Optional[tuple[int, bool]]) -> None:
         self._pending_restore = value
 
-    def bind_page(self, page: ft.Page) -> None:
+    def bind_page(self, page: ui.Page) -> None:
         self._page = page
 
     @property
@@ -100,20 +100,13 @@ class VideoEngine:
                 pass
 
     @staticmethod
-    def build_fullscreen_controls() -> MaterialDesktopVideoControls:
-        return MaterialDesktopVideoControls(
-            seek_bar_position_color=C_PRIMARY,
-            seek_bar_thumb_color=C_PRIMARY,
-            seek_bar_color=C_BORDER,
-            seek_bar_hover_color=C_HOVER,
-            volume_bar_active_color=C_PRIMARY,
-            volume_bar_thumb_color=C_PRIMARY,
-            volume_bar_color=C_BORDER,
-            button_bar_button_color=C_TEXT,
-            play_and_pause_on_tap=False,
-            toggle_fullscreen_on_double_press=True,
-            visible_on_mount=False,
-        )
+    def build_fullscreen_controls():
+        """全屏控制条：配色取自 cs-ui 的 :func:`ui.desktop_controls`。
+
+        保留此方法名是为了让既有调用点不用改；颜色不再在这里手写，
+        与控制栏自绘部分共用同一张 :class:`ui.MediaPalette`。
+        """
+        return desktop_controls(PALETTE)
 
     @staticmethod
     def build_playlist(
@@ -121,6 +114,11 @@ class VideoEngine:
         play_mode: PlayMode,
         current_index: int,
     ) -> list[VideoMedia]:
+        """把业务播放列表翻译成原生播放列表。
+
+        单曲循环时只投喂当前一项（原生 ``SINGLE`` 模式会自己重播），否则整列
+        交给播放器，让上一曲 / 下一曲由底层轨道事件驱动。
+        """
         if not items:
             return []
         if play_mode == PlayMode.REPEAT_ONE:
@@ -131,6 +129,7 @@ class VideoEngine:
 
     @staticmethod
     def get_playlist_mode(play_mode: PlayMode) -> PlaylistMode:
+        """业务播放模式 → 原生播放列表模式（纯映射，可单测）。"""
         if play_mode == PlayMode.REPEAT_ONE:
             return PlaylistMode.SINGLE
         if play_mode == PlayMode.REPEAT_ALL:
@@ -146,7 +145,7 @@ class VideoEngine:
     async def play(self) -> None:
         v = self.video
         if v is None:
-            logger.warning("Video 控件未就绪，无法播放")
+            logger.warning("播放器未就绪，无法播放")
             return
         await self._run(v.play, label="play")
 
@@ -174,7 +173,7 @@ class VideoEngine:
             return
         position_ms = max(0, position_ms)
         await self._run(
-            lambda: v.seek(ft.Duration(milliseconds=position_ms)),
+            lambda: v.seek(ui.Duration(milliseconds=position_ms)),
             label=f"seek({position_ms})",
         )
 

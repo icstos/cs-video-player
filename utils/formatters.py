@@ -1,5 +1,8 @@
-"""
-时间、大小与事件数据格式化工具。
+"""时间、大小与事件数据格式化 —— 纯函数层，不依赖页面与状态。
+
+时间格式委托给 :func:`ui.format_time`（cs-ui 的媒体控件与时间轴用的是同一个
+函数，所以「控制栏读数」和「拖动浮标」不会出现两套舍入规则）。其余函数只做
+数据转换，可以直接单测。
 """
 
 from __future__ import annotations
@@ -8,19 +11,23 @@ import json
 from pathlib import Path
 from typing import Any
 
-import flet as ft
+import ui
+from ui import format_time
+
+__all__ = [
+    "fmt_time",
+    "human_size",
+    "parse_idx",
+    "parse_ms",
+    "safe_float",
+    "safe_int",
+    "to_uri",
+]
 
 
 def fmt_time(ms: int | float | None) -> str:
-    """毫秒转 MM:SS 或 HH:MM:SS。"""
-    if ms is None or ms <= 0:
-        return "00:00"
-    total_s = int(ms) // 1000
-    hours, remainder = divmod(total_s, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if hours > 0:
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes:02d}:{seconds:02d}"
+    """毫秒 → ``MM:SS`` / ``HH:MM:SS``。"""
+    return format_time(ms)
 
 
 def human_size(value: int | float | None) -> str:
@@ -37,7 +44,7 @@ def human_size(value: int | float | None) -> str:
 
 
 def to_uri(path: str) -> str:
-    """将本地路径转换成 file URI。"""
+    """将本地路径转换成 file URI（交给 flet-video 的播放列表）。"""
     return Path(path).expanduser().resolve().as_uri()
 
 
@@ -52,10 +59,14 @@ def _duration_dict_to_ms(value: dict[str, Any]) -> int:
 
 
 def parse_ms(data: Any) -> int:
-    """将 Flet Duration 或事件数据解析为毫秒。"""
+    """把 Flet Duration / 事件数据解析成毫秒。
+
+    底层播放器在不同事件里会给出 ``Duration`` 对象、字典或 JSON 字符串，
+    这里一次收敛成整数；无法解析时返回 0，绝不把脏数据抛给状态层。
+    """
     if data is None:
         return 0
-    if isinstance(data, ft.Duration):
+    if isinstance(data, ui.Duration):
         return int(data.in_milliseconds)
     if isinstance(data, dict):
         return _duration_dict_to_ms(data)
@@ -73,7 +84,7 @@ def parse_ms(data: Any) -> int:
 
 
 def parse_idx(data: Any) -> int:
-    """解析索引数据。"""
+    """解析轨道索引，兼容整数、数字字符串与 JSON 字符串。"""
     if isinstance(data, int):
         return data
     if isinstance(data, str):
@@ -99,3 +110,32 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def volume_after_wheel(volume: float, delta_y: float, step: float) -> float:
+    """滚轮调音量的纯计算：上滚加、下滚减，结果夹在 0~100。
+
+    从事件回调里抽出来，是为了让「方向」和「边界」可以被单测，而不是只能靠
+    手滚鼠标验证。``delta_y`` 为 0 时返回原值（调用方可据此跳过一次状态更新）。
+    """
+    if delta_y == 0:
+        return volume
+    return max(0.0, min(100.0, volume + (step if delta_y < 0 else -step)))
+
+
+def slider_position(event: Any) -> int | None:
+    """从滑块事件里取毫秒值：优先 ``event.data``，其次控件当前值。
+
+    Flet 的新值先随事件到达，``control.value`` 的回写可能晚一帧，所以顺序不能反。
+    """
+    for candidate in (
+        getattr(event, "data", None),
+        getattr(getattr(event, "control", None), "value", None),
+    ):
+        if candidate is None:
+            continue
+        try:
+            return int(float(candidate))
+        except (TypeError, ValueError):
+            continue
+    return None

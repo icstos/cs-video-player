@@ -3,7 +3,7 @@
 # custom path
 output
 docs
-
+.workbuddy
 # custom file
 *.pt
 *.log
