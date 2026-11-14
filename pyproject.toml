@@ -18,10 +18,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Video",
 ]
-# 只依赖 cs-ui：flet / flet-video 由它统一声明并锁定兼容版本，
-# 应用侧不再直接引用底层框架。
+# cs-ui 只提供通用 UI 与设计令牌；视频后端（flet-video）由本项目自己持有 ——
+# 播放器接管时间轴 / 音量 / 全屏 / 播放列表状态，不是一个通用控件。
+# 版本区间与 cs-ui 锁定的 flet 1.1.x 对齐，避免协议层不一致。
 dependencies = [
     "cs-ui>=0.2.0",
+    "flet-video>=1.1.2,<1.2",
 ]
 
 [project.urls]

@@ -12,8 +12,9 @@
 * :class:`ControlsActions` 是**回调集合**，值从参数进、意图从回调出；
 * :func:`build_control_bar` 是无状态纯函数，不读全局状态、不注册副作用。
 
-时间轴、音量、倍速、图标按钮分别用 cs-ui 的 ``TimeSlider`` / ``VolumeControl`` /
-``SpeedMenu`` / ``IconAction``，配色与本应用的 ``PALETTE`` 同源。
+时间轴、音量、倍速、图标按钮分别用 :mod:`components.media` 的 ``TimeSlider`` /
+``VolumeControl`` / ``SpeedMenu`` / ``IconAction``，配色与本应用的 ``PALETTE``
+同源（视频能力已从 cs-ui 收回本项目，见 :mod:`components.media`）。
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from configs.theme import (
 )
 from core.models import PlayMode, PlayerState
 from components.kit import icon_action, muted
+from components.media import BAR_PADDING, SpeedMenu, TimeSlider, VolumeControl
 
 #: 播放模式 → (图标, tooltip)。数据与视图分离，快捷键提示也可复用这张表。
 PLAY_MODE_STYLE: dict[PlayMode, tuple[object, str]] = {
@@ -98,7 +100,7 @@ def build_control_bar(
         )
 
     # ─── 上排：时间轴 ───
-    timeline = ui.TimeSlider(
+    timeline = TimeSlider(
         view.position_ms,
         view.duration_ms,
         show_remaining=state.show_remaining_time,
@@ -145,7 +147,7 @@ def build_control_bar(
             _btn(mode_icon, lambda e: actions.on_toggle_play_mode(),
                  mode_label, enabled=has_video, color=C_PRIMARY),
             ui.Container(width=SPACING_SM),
-            ui.SpeedMenu(
+            SpeedMenu(
                 state.playback_rate,
                 PLAYBACK_SPEEDS,
                 actions.on_set_rate,
@@ -166,7 +168,7 @@ def build_control_bar(
     )
 
     buttons.append(
-        ui.VolumeControl(
+        VolumeControl(
             state.volume,
             state.muted,
             on_change=actions.on_set_volume,
@@ -198,5 +200,5 @@ def build_control_bar(
         ),
         bgcolor=C_BG_PANEL,
         border=ui.Border.only(top=ui.BorderSide(1, C_DIVIDER)),
-        padding=ui.BAR_PADDING,
+        padding=BAR_PADDING,
     )

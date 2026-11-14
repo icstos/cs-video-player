@@ -2,8 +2,7 @@
 
 边界：这一层只懂「播放器能做什么」（播放 / 跳转 / 音量 / 全屏 / 截图），
 不懂界面上按钮长什么样、播放列表怎么排序。所有底层类型与控件配色都从
-``ui`` 门面取（:mod:`ui.display.media`），应用侧不再直接依赖 ``flet`` 或
-``flet-video``。
+:mod:`components.media` 取，应用侧不直接 import ``flet_video``。
 
 关键约定：``NativeVideo`` 的 volume / playback_rate / muted / fullscreen 是
 **属性**，赋值后要 ``page.update()``；播放控制方法（play / pause / seek 等）
@@ -18,7 +17,7 @@ import logging
 from typing import Callable, Optional
 
 import ui
-from ui.display.media import NativeVideo, PlaylistMode, VideoMedia, desktop_controls
+from components.media import NativeVideo, PlaylistMode, VideoMedia, desktop_controls
 
 from configs.theme import PALETTE
 from core.models import PlayMode, PlaylistItem
@@ -30,7 +29,7 @@ ErrorCallback = Callable[[str, str], None]  # (label, error_message)
 
 
 class VideoEngine:
-    """对 :class:`ui.NativeVideo` 的异步安全封装。"""
+    """对 :class:`components.media.NativeVideo` 的异步安全封装。"""
 
     def __init__(self) -> None:
         self._video_ref: ui.Ref[NativeVideo] = ui.Ref[NativeVideo]()
@@ -101,10 +100,10 @@ class VideoEngine:
 
     @staticmethod
     def build_fullscreen_controls():
-        """全屏控制条：配色取自 cs-ui 的 :func:`ui.desktop_controls`。
+        """全屏控制条：配色取自 :func:`components.media.desktop_controls`。
 
         保留此方法名是为了让既有调用点不用改；颜色不再在这里手写，
-        与控制栏自绘部分共用同一张 :class:`ui.MediaPalette`。
+        与控制栏自绘部分共用同一张 :class:`configs.theme.MediaPalette`。
         """
         return desktop_controls(PALETTE)
 

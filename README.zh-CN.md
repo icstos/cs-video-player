@@ -2,17 +2,20 @@
 
 [English](README.md) | 中文
 
-基于 Python 3.12+ 与 **cs-ui**（构建于 Flet 1.1.2 之上的声明式组件库）开发的
-Windows 桌面本地视频播放器。交互设计灵感来自 PotPlayer，格式兼容性对标 VLC。
+基于 Python 3.12+、**cs-ui**（构建于 Flet 1.1.2 之上的声明式组件库）与
+**flet-video** 开发的 Windows 桌面本地视频播放器。交互设计灵感来自 PotPlayer，
+格式兼容性对标 VLC。
 
-应用只依赖 `cs-ui`，代码中不直接导入 `flet` / `flet-video`：所有控件、设计令牌
-与原生媒体能力都从 `ui` 门面取得。
+视频能力（原生播放器门面、时间轴 / 音量 / 倍速控制件、按品牌色推导的色表）收在
+`components/media/`：cs-ui 只做通用 UI，不再内置播放器组件，也不会替所有使用者
+背上 `flet-video`。代码里仍不直接 `import flet` —— 控件与设计令牌从 `ui` 门面取，
+`flet_video` 只出现在 `components/media/backend.py` 一处。
 
 ## 功能特性
 
 - **全格式支持** — MP4、MKV、AVI、MOV、FLV、WebM、WMV、MPG、TS、RMVB 等
 - **声明式 UI** — `@ui.component` hooks（`use_state`、`use_effect`、`use_memo`、`use_ref`、`use_context`）
-- **设计只有一套** — 颜色、间距、字号、图标刻度全部由 `ui.core.tokens` 与 `ui.MediaPalette` 推导
+- **设计只有一套** — 颜色、间距、字号、图标刻度全部由 `ui.core.tokens` 与 `configs.theme.MediaPalette` 推导
 - **播放列表管理** — 添加文件/文件夹，按名称/大小/日期排序，拖拽排序
 - **多文件选择** — 一次选择多个文件或打开整个文件夹
 - **播放模式** — 顺序播放、列表循环、单曲循环、随机播放
@@ -26,24 +29,27 @@ Windows 桌面本地视频播放器。交互设计灵感来自 PotPlayer，格�
 - **设置持久化** — 音量、播放倍速、播放模式、侧栏宽度、时间显示模式
 - **会话恢复** — 退出时自动保存播放列表、当前曲目与播放进度，下次启动时可选择继续播放
 - **硬件加速** — 基于 mpv/libmpv 后端
-- **截图** — 通过 `Video.take_screenshot()` 截取当前画面
+- **截图** — 通过 `NativeVideo.take_screenshot()` 截取当前画面
 
 ## 项目结构
 
 ```
 cs-video-player/
   main.py                    # 入口：ui.run、主题、窗口、page.render
-  pyproject.toml             # 只依赖 cs-ui
+  pyproject.toml             # 依赖 cs-ui + flet-video
   configs/
     app_config.py            # 业务常量与配置
-    theme.py                 # 设计层：cs-ui 令牌 → 产品语义
+    theme.py                 # 设计层：品牌色 → MediaPalette + cs-ui 令牌语义
   core/
     models.py                # 数据模型（PlaylistItem、PlayerState、枚举）
     video_engine.py          # NativeVideo 封装（异步安全、纯映射）
     player_controller.py     # 状态管理桥接层
   components/
     kit.py                   # 产品 UI 词汇层（纯控件工厂）
-    control_bar.py           # 紧凑控制栏（TimeSlider / VolumeControl / SpeedMenu）
+    media/
+      backend.py             # 唯一 import flet_video 的地方（原生播放器门面）
+      controls.py            # 无状态控制件（TimeSlider / VolumeControl / SpeedMenu）
+    control_bar.py           # 紧凑控制栏（装配上面那几个控制件）
     app.py                   # 根组件（键盘、FileDialog、会话恢复）
     sidebar.py               # 播放列表、文件打开、最近文件、拖拽排序
     player_area.py           # 视频显示 + 播放事件编排
@@ -55,12 +61,13 @@ cs-video-player/
 ```
 
 `kit.py` 是唯一把 cs-ui 控件装配成本产品语汇的地方；视图只描述结构与文案，
-不写颜色、字号或圆角。
+不写颜色、字号或圆角。`components/media/` 是视频能力的边界：往上是纯控件树，
+往下只有它认识 `flet-video`。
 
 ## 安装
 
 ```bash
-pip install .          # 自动带入 cs-ui（>=0.2.0）及兼容版本的 flet-video
+pip install .          # 自动带入 cs-ui（>=0.2.0）与 flet-video（1.1.x）
 pip install -e .       # 开发模式
 ```
 
@@ -91,9 +98,9 @@ python main.py
 ## 设计与验证
 
 设计层是**可复算**的：唯一的自选色 `BRAND_PRIMARY` 交给
-`ui.MediaPalette.derive(brand, mode="dark")`，算出的色表同时下发给页面主题、
-自绘控制栏和原生全屏控件。`configs.theme.palette_snapshot()` 可打印整张表，
-ui-mcp 索引里可查到所有公共组件的签名。
+`configs.theme.MediaPalette.derive(brand, mode="dark")`，算出的色表同时下发给
+页面主题、自绘控制栏和原生全屏控件。`configs.theme.palette_snapshot()` 可打印
+整张表，ui-mcp 索引里可查到 cs-ui 所有公共组件的签名。
 
 ```bash
 python scripts/test_logic.py                                  # 21 项纯逻辑测试
@@ -107,9 +114,10 @@ python scripts/verify_app.py --demo --shot output/app_with_list.png
 ## 技术栈
 
 - **Python 3.12+**
-- **cs-ui ≥ 0.2.0** — 基于 Flet 1.1.2 的组件库，唯一的框架依赖
+- **cs-ui ≥ 0.2.0** — 基于 Flet 1.1.2 的组件库：控件、设计令牌、hooks
+- **flet-video 1.1.x** — 原生播放后端，只经 `components/media/backend.py` 接入
 - **`@ui.component` hooks** — 声明式状态、排序结果 memo、副作用清理
-- **设计令牌** — `ui.core.tokens` + `ui.MediaPalette`（算出来的配色、4px 网格、排印律）
+- **设计令牌** — `ui.core.tokens` + `configs.theme.MediaPalette`（算出来的配色、4px 网格、排印律）
 - **面向对象设计** — 控制器 / 引擎 / 模型分层，UI 是状态的纯投影
 - **状态驱动 UI** — `PlayerState` 作为唯一数据源，通过监听回调实现响应式更新
 
@@ -142,6 +150,6 @@ python scripts/verify_app.py --demo --shot output/app_with_list.png
                          │
               ┌──────────▼──────────┐
               │   VideoEngine        │
-              │ (cs-ui 媒体门面)     │
+              │ (components.media)   │
               └─────────────────────┘
 ```

@@ -21,6 +21,7 @@ from typing import Callable, Optional
 import ui
 from ui import Button, Icons, Message, StyleType
 
+from components.media import IconAction
 from configs.theme import (
     C_BG_ACTIVE,
     C_BG_HOVER,
@@ -185,8 +186,8 @@ def icon_action(
     color: str | None = None,
     size: int = ICON_SIZE_MD,
 ) -> ui.IconButton:
-    """控制栏图标按钮：cs-ui 的 :func:`ui.IconAction` + 本产品的色表。"""
-    return ui.IconAction(
+    """控制栏图标按钮：:func:`components.media.IconAction` + 本产品的色表。"""
+    return IconAction(
         icon,
         on_click,
         tooltip=tooltip,

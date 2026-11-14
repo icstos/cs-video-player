@@ -5,8 +5,8 @@ cs-ui 色表、参数也更克制。本模块只保留旧名字，避免外部�
 不再新增函数。
 
 唯一还使用原生控件的是 ``styled_slider``：cs-ui 的 ``ui.Slider`` 是 observable
-（要构造后调 ``.ui()``），与旧函数「返回一个控件」的契约不同；这里用 cs-ui 门面
-提供的 ``ui.NativeSlider``，应用侧不需要知道底层框架包。
+（要构造后调 ``.ui()``），与旧函数「返回一个控件」的契约不同；这里直接用
+``ui.ft``（cs-ui 公开的底层别名）取原生滑块，应用侧不额外依赖框架包。
 """
 
 from __future__ import annotations
@@ -82,8 +82,8 @@ def styled_slider(
     expand: bool = False,
     width: Optional[float] = None,
 ):
-    """标准滑块（cs-ui 门面里的原生滑块）。"""
-    return ui.NativeSlider(
+    """标准滑块（原生控件，经 ``ui.ft`` 取得）。"""
+    return ui.ft.Slider(
         min=min_val,
         max=max_val,
         value=value,

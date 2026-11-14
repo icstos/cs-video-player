@@ -122,8 +122,11 @@ async def _run(page: ui.Page) -> None:
         print("VERIFY_OK" if not _PROBLEMS else "VERIFY_FAIL")
         for problem in _PROBLEMS:
             print("VERIFY_PROBLEM", problem)
+        # 关窗后留一拍：flet 的 destroy 是异步下发的，紧接着回收 session 会
+        # 撞上 "Session closed"，日志里多一段无意义的 traceback。
         try:
             await page.window.close()
+            await asyncio.sleep(0.3)
         except Exception:
             pass
 

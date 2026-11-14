@@ -24,7 +24,7 @@ import logging
 from typing import Callable
 
 import ui
-from ui.display.media import NativeVideo, VideoControlsMode, desktop_controls
+from components.media import NativeVideo, VideoControlsMode, desktop_controls
 
 from components.control_bar import ControlsActions, ControlsView, build_control_bar
 from components.kit import empty_stage

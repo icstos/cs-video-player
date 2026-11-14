@@ -1,8 +1,8 @@
 """时间、大小与事件数据格式化 —— 纯函数层，不依赖页面与状态。
 
-时间格式委托给 :func:`ui.format_time`（cs-ui 的媒体控件与时间轴用的是同一个
-函数，所以「控制栏读数」和「拖动浮标」不会出现两套舍入规则）。其余函数只做
-数据转换，可以直接单测。
+时间格式在本模块定义（而不是转手 cs-ui）：控制栏读数、拖动浮标、时长标签
+必须走**同一个**函数，否则同一段视频会出现两套舍入规则。这里的实现是纯整数
+运算，可以脱离界面单测；``fmt_rate`` 同理。
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 import ui
-from ui import format_time
 
 __all__ = [
+    "fmt_rate",
     "fmt_time",
     "human_size",
     "parse_idx",
@@ -22,12 +22,24 @@ __all__ = [
     "safe_float",
     "safe_int",
     "to_uri",
+    "volume_after_wheel",
 ]
 
 
 def fmt_time(ms: int | float | None) -> str:
-    """毫秒 → ``MM:SS`` / ``HH:MM:SS``。"""
-    return format_time(ms)
+    """毫秒 → ``MM:SS`` / ``HH:MM:SS``；空值与负数一律读作 ``00:00``。"""
+    if ms is None or ms <= 0:
+        return "00:00"
+    hours, remainder = divmod(int(ms) // 1000, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def fmt_rate(rate: float) -> str:
+    """倍速 → ``1x`` / ``1.5x``（去掉无意义的尾零）。"""
+    return f"{rate:g}x"
 
 
 def human_size(value: int | float | None) -> str:

@@ -1,7 +1,7 @@
 """纯逻辑回归 —— 不需要窗口，``python scripts/test_logic.py`` 直接跑。
 
 覆盖三类「可复算」的东西：格式化与解析、播放引擎/控制器的状态推导、
-设计层与 cs-ui 色表的确定性。UI 构建期的问题由 ``verify_app.py`` 负责。
+设计层色表的确定性。UI 构建期的问题由 ``verify_app.py`` 负责。
 """
 
 from __future__ import annotations
@@ -16,12 +16,18 @@ sys.path.insert(0, str(ROOT))
 
 import ui  # noqa: E402
 
-from configs.theme import BRAND_PRIMARY, THEME_MODE, palette_snapshot  # noqa: E402
+from configs.theme import (  # noqa: E402
+    BRAND_PRIMARY,
+    THEME_MODE,
+    MediaPalette,
+    palette_snapshot,
+)
 from core.models import PlayMode, PlaylistItem, PlayerState, SortKey  # noqa: E402
 from core.player_controller import PlayerController  # noqa: E402
 from core.video_engine import VideoEngine  # noqa: E402
 from utils.error_handler import classify_error  # noqa: E402
 from utils.formatters import (  # noqa: E402
+    fmt_rate,
     fmt_time,
     human_size,
     parse_idx,
@@ -52,13 +58,11 @@ class FormattingTest(unittest.TestCase):
         self.assertEqual(fmt_time(61_000), "01:01")
         self.assertEqual(fmt_time(3_661_000), "01:01:01")
         self.assertEqual(fmt_time(59 * 60_000 + 59_000), "59:59")
-        # 与控制栏 / 拖动浮标用的是同一个 cs-ui 函数
-        self.assertEqual(fmt_time(61_000), ui.format_time(61_000))
 
     def test_rate(self):
-        self.assertEqual(ui.format_rate(1.0), "1x")
-        self.assertEqual(ui.format_rate(1.5), "1.5x")
-        self.assertEqual(ui.format_rate(0.25), "0.25x")
+        self.assertEqual(fmt_rate(1.0), "1x")
+        self.assertEqual(fmt_rate(1.5), "1.5x")
+        self.assertEqual(fmt_rate(0.25), "0.25x")
 
     def test_size_and_uri(self):
         self.assertEqual(human_size(None), "0 B")
@@ -206,13 +210,13 @@ class ControllerTest(unittest.TestCase):
 
 class DesignTest(unittest.TestCase):
     def test_palette_is_recomputable(self):
-        first = ui.MediaPalette.derive(BRAND_PRIMARY, mode=THEME_MODE)
-        second = ui.MediaPalette.derive(BRAND_PRIMARY, mode=THEME_MODE)
+        first = MediaPalette.derive(BRAND_PRIMARY, mode=THEME_MODE)
+        second = MediaPalette.derive(BRAND_PRIMARY, mode=THEME_MODE)
         self.assertEqual(first, second)
         self.assertEqual(first.as_dict(), second.as_dict())
         self.assertNotEqual(
             first.as_dict()["surface"],
-            ui.MediaPalette.derive(BRAND_PRIMARY, mode="light").as_dict()["surface"],
+            MediaPalette.derive(BRAND_PRIMARY, mode="light").as_dict()["surface"],
         )
 
     def test_snapshot_is_complete(self):

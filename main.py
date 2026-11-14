@@ -1,14 +1,15 @@
 """
 CS Video Player — 主入口
 
-基于 Python 3.12 + cs-ui（底层 Flet）+ ui.display.media 的声明式本地视频播放器。
+基于 Python 3.12 + cs-ui（底层 Flet）+ flet-video 的声明式本地视频播放器。
 深度参考 PotPlayer 交互逻辑与 VLC 全格式能力。
 
 架构::
 
     configs/     — 应用常量 + 设计层（cs-ui 令牌的语义投影）
     core/        — 数据模型、播放引擎、播放控制器（纯逻辑，不碰界面）
-    components/  — 声明式 UI：kit（UI 词汇）/ sidebar / control_bar / player_area / app
+    components/  — 声明式 UI：kit（UI 词汇）/ media（视频后端与控制件）/
+                   sidebar / control_bar / player_area / app
     utils/       — 格式化、文件扫描、持久化、错误处理（纯函数优先）
 
 主题只有 cs-ui 一个事实源：这里告诉它「品牌色 + 固定深色」，
