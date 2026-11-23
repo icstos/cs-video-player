@@ -15,8 +15,8 @@ from typing import Callable, List, Sequence
 
 import ui
 
-from configs.app_config import SIDEBAR_DEFAULT_WIDTH
-from configs.theme import (
+from cs_video_player.configs.app_config import SIDEBAR_DEFAULT_WIDTH
+from cs_video_player.configs.theme import (
     C_BG_PANEL,
     C_BORDER,
     C_DIVIDER,
@@ -36,9 +36,9 @@ from configs.theme import (
     SPACING_MD,
     SPACING_SM,
 )
-from core.models import PlaylistItem, SortKey
-from utils.formatters import human_size
-from components.kit import (
+from cs_video_player.core.models import PlaylistItem, SortKey
+from cs_video_player.utils.formatters import human_size
+from cs_video_player.components.kit import (
     ROW_BG,
     ROW_PADDING,
     clickable,

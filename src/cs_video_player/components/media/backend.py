@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import flet_video as fv
 
-from configs.theme import MediaPalette, PALETTE
+from cs_video_player.configs.theme import MediaPalette, PALETTE
 
 __all__ = [
     "MaterialDesktopVideoControls",

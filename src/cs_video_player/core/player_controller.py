@@ -10,11 +10,11 @@ import random
 from datetime import datetime
 from typing import Callable, List
 
-from configs.app_config import DEFAULT_SPEED, DEFAULT_VOLUME, MAX_PLAYLIST
-from core.models import PlayMode, PlaylistItem, PlayerState, SortKey
-from core.video_engine import VideoEngine
-from utils.error_handler import classify_error
-from utils.storage import StorageManager
+from cs_video_player.configs.app_config import DEFAULT_SPEED, DEFAULT_VOLUME, MAX_PLAYLIST
+from cs_video_player.core.models import PlayMode, PlaylistItem, PlayerState, SortKey
+from cs_video_player.core.video_engine import VideoEngine
+from cs_video_player.utils.error_handler import classify_error
+from cs_video_player.utils.storage import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +362,7 @@ class PlayerController:
         StorageManager.save_recents(self._recents)
 
     def play_recent(self, path: str) -> None:
-        from utils.file_scanner import make_playlist_item
+        from cs_video_player.utils.file_scanner import make_playlist_item
 
         try:
             item = make_playlist_item(path)

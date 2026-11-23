@@ -24,16 +24,16 @@ import logging
 from typing import Callable
 
 import ui
-from components.media import NativeVideo, VideoControlsMode, desktop_controls
+from cs_video_player.components.media import NativeVideo, VideoControlsMode, desktop_controls
 
-from components.control_bar import ControlsActions, ControlsView, build_control_bar
-from components.kit import empty_stage
-from configs.app_config import CONTROLS_AUTO_HIDE_MS, VOLUME_WHEEL_STEP
-from configs.theme import C_BG_DARKEST, PALETTE
-from core.models import PlayerState
-from core.video_engine import VideoEngine
-from utils.error_handler import handle_error
-from utils.formatters import (
+from cs_video_player.components.control_bar import ControlsActions, ControlsView, build_control_bar
+from cs_video_player.components.kit import empty_stage
+from cs_video_player.configs.app_config import CONTROLS_AUTO_HIDE_MS, VOLUME_WHEEL_STEP
+from cs_video_player.configs.theme import C_BG_DARKEST, PALETTE
+from cs_video_player.core.models import PlayerState
+from cs_video_player.core.video_engine import VideoEngine
+from cs_video_player.utils.error_handler import handle_error
+from cs_video_player.utils.formatters import (
     fmt_time,
     parse_idx,
     parse_ms,

@@ -22,10 +22,10 @@ import logging
 
 import ui
 
-from components.kit import confirm_dialog, toast
-from components.player_area import PlayerArea
-from components.sidebar import Sidebar
-from configs.app_config import (
+from cs_video_player.components.kit import confirm_dialog, toast
+from cs_video_player.components.player_area import PlayerArea
+from cs_video_player.components.sidebar import Sidebar
+from cs_video_player.configs.app_config import (
     KEYBOARD_SHORTCUTS,
     PLAYBACK_SPEEDS,
     SEEK_STEP_SHORT,
@@ -36,9 +36,9 @@ from configs.app_config import (
     VIDEO_EXTENSIONS,
     VOLUME_STEP,
 )
-from core.player_controller import PlayerController
-from utils.error_handler import handle_error
-from utils.file_scanner import make_playlist_items, scan_videos
+from cs_video_player.core.player_controller import PlayerController
+from cs_video_player.utils.error_handler import handle_error
+from cs_video_player.utils.file_scanner import make_playlist_items, scan_videos
 
 logger = logging.getLogger(__name__)
 

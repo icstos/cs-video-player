@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from configs.app_config import VIDEO_EXTENSIONS, MAX_PLAYLIST
-from core.models import PlaylistItem
+from cs_video_player.configs.app_config import VIDEO_EXTENSIONS, MAX_PLAYLIST
+from cs_video_player.core.models import PlaylistItem
 
 logger = logging.getLogger(__name__)
 

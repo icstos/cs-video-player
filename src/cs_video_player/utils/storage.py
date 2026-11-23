@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any, List
 
-from configs.app_config import (
+from cs_video_player.configs.app_config import (
     APP_DATA_DIR,
     MAX_RECENTS,
     PLAYBACK_STATE_FILE,

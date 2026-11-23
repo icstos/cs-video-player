@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 import ui
 
-from configs.theme import (
+from cs_video_player.configs.theme import (
     C_BORDER,
     C_PRIMARY,
     C_TEXT,
@@ -24,7 +24,7 @@ from configs.theme import (
     SPACING_LG,
     SPACING_SM,
 )
-from components.kit import empty_list, hairline, icon_action
+from cs_video_player.components.kit import empty_list, hairline, icon_action
 
 __all__ = ["divider", "empty_state", "icon_button", "styled_slider", "text_label"]
 

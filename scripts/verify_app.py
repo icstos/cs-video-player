@@ -17,8 +17,9 @@ import logging
 import sys
 from pathlib import Path
 
+# src 布局：项目包在 src/ 下，脚本在仓库根的 scripts/ 下。
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
 #: ``python scripts/verify_app.py --shot output/app.png`` 额外导出一张界面截图。
 #: ``--demo`` 会注入几条假播放列表项，用来验收列表行、选中态与排序条。
@@ -27,9 +28,10 @@ DEMO: bool = False
 
 import ui  # noqa: E402
 
-from components.app import App  # noqa: E402
-from core.player_controller import PlayerController  # noqa: E402
-from main import configure_page  # noqa: E402
+from cs_video_player._paths import assets_dir, project_root  # noqa: E402
+from cs_video_player.bootstrap import configure_page  # noqa: E402
+from cs_video_player.components.app import App  # noqa: E402
+from cs_video_player.core.player_controller import PlayerController  # noqa: E402
 
 _PROBLEMS: list[str] = []
 
@@ -55,7 +57,7 @@ async def _run(page: ui.Page) -> None:
         if DEMO:
             from datetime import datetime
 
-            from core.models import PlaylistItem
+            from cs_video_player.core.models import PlaylistItem
 
             controller.state.playlist = [
                 PlaylistItem(
@@ -108,7 +110,7 @@ async def _run(page: ui.Page) -> None:
                 page.enable_screenshots = True
                 await asyncio.sleep(0.4)
                 png = await page.take_screenshot(delay=200)
-                target = ROOT / SHOT
+                target = project_root() / SHOT
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(png)
                 print(f"SHOT_OK {target} ({len(png)} bytes)")
@@ -139,7 +141,7 @@ def main() -> None:
         index = args.index("--shot")
         SHOT = args[index + 1] if index + 1 < len(args) else "output/app.png"
     logging.getLogger().addHandler(_Collector())
-    ui.run(_run, view=ui.AppView.FLET_APP_HIDDEN, assets_dir=str(ROOT / "assets"))
+    ui.run(_run, view=ui.AppView.FLET_APP_HIDDEN, assets_dir=str(assets_dir()))
 
 
 if __name__ == "__main__":

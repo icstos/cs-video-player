@@ -30,15 +30,18 @@ dependencies = [
 Repository = "https://github.com/cs-video-player/cs-video-player"
 
 [project.scripts]
-cs-video-player = "main:main_entry"
+cs-video-player = "cs_video_player.bootstrap:run"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
+# src 布局：包实体在 src/cs_video_player/ 下，从 src 根自动发现顶层包与全部子包，
+# 以后新增子包不需要再改这里。根目录的 main.py 只是开发入口，不参与安装。
 [tool.setuptools]
-py-modules = ["main"]
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
-include = ["components*", "configs*", "core*", "utils*"]
-exclude = ["tests*", "__pycache__*", "build*"]
+where = ["src"]
+include = ["cs_video_player*"]
+exclude = ["tests*", "__pycache__*"]

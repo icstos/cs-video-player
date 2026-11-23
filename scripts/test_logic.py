@@ -11,22 +11,23 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+# src 布局：项目包在 src/ 下，脚本在仓库根的 scripts/ 下。
+SRC = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC))
 
 import ui  # noqa: E402
 
-from configs.theme import (  # noqa: E402
+from cs_video_player.configs.theme import (  # noqa: E402
     BRAND_PRIMARY,
     THEME_MODE,
     MediaPalette,
     palette_snapshot,
 )
-from core.models import PlayMode, PlaylistItem, PlayerState, SortKey  # noqa: E402
-from core.player_controller import PlayerController  # noqa: E402
-from core.video_engine import VideoEngine  # noqa: E402
-from utils.error_handler import classify_error  # noqa: E402
-from utils.formatters import (  # noqa: E402
+from cs_video_player.core.models import PlayMode, PlaylistItem, PlayerState, SortKey  # noqa: E402
+from cs_video_player.core.player_controller import PlayerController  # noqa: E402
+from cs_video_player.core.video_engine import VideoEngine  # noqa: E402
+from cs_video_player.utils.error_handler import classify_error  # noqa: E402
+from cs_video_player.utils.formatters import (  # noqa: E402
     fmt_rate,
     fmt_time,
     human_size,

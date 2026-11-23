@@ -24,8 +24,8 @@ from typing import Callable
 
 import ui
 
-from configs.app_config import PLAYBACK_SPEEDS
-from configs.theme import (
+from cs_video_player.configs.app_config import PLAYBACK_SPEEDS
+from cs_video_player.configs.theme import (
     C_BG_PANEL,
     C_DIVIDER,
     C_PRIMARY,
@@ -36,9 +36,9 @@ from configs.theme import (
     PALETTE,
     SPACING_SM,
 )
-from core.models import PlayMode, PlayerState
-from components.kit import icon_action, muted
-from components.media import BAR_PADDING, SpeedMenu, TimeSlider, VolumeControl
+from cs_video_player.core.models import PlayMode, PlayerState
+from cs_video_player.components.kit import icon_action, muted
+from cs_video_player.components.media import BAR_PADDING, SpeedMenu, TimeSlider, VolumeControl
 
 #: 播放模式 → (图标, tooltip)。数据与视图分离，快捷键提示也可复用这张表。
 PLAY_MODE_STYLE: dict[PlayMode, tuple[object, str]] = {

@@ -7,15 +7,15 @@
 格式兼容性对标 VLC。
 
 视频能力（原生播放器门面、时间轴 / 音量 / 倍速控制件、按品牌色推导的色表）收在
-`components/media/`：cs-ui 只做通用 UI，不再内置播放器组件，也不会替所有使用者
-背上 `flet-video`。代码里仍不直接 `import flet` —— 控件与设计令牌从 `ui` 门面取，
-`flet_video` 只出现在 `components/media/backend.py` 一处。
+`src/cs_video_player/components/media/`：cs-ui 只做通用 UI，不再内置播放器组件，
+也不会替所有使用者背上 `flet-video`。代码里仍不直接 `import flet` —— 控件与设计
+令牌从 `ui` 门面取，`flet_video` 只出现在 `media/backend.py` 一处。
 
 ## 功能特性
 
 - **全格式支持** — MP4、MKV、AVI、MOV、FLV、WebM、WMV、MPG、TS、RMVB 等
 - **声明式 UI** — `@ui.component` hooks（`use_state`、`use_effect`、`use_memo`、`use_ref`、`use_context`）
-- **设计只有一套** — 颜色、间距、字号、图标刻度全部由 `ui.core.tokens` 与 `configs.theme.MediaPalette` 推导
+- **设计只有一套** — 颜色、间距、字号、图标刻度全部由 `ui.core.tokens` 与 `cs_video_player.configs.theme.MediaPalette` 推导
 - **播放列表管理** — 添加文件/文件夹，按名称/大小/日期排序，拖拽排序
 - **多文件选择** — 一次选择多个文件或打开整个文件夹
 - **播放模式** — 顺序播放、列表循环、单曲循环、随机播放
@@ -35,30 +35,40 @@
 
 ```
 cs-video-player/
-  main.py                    # 入口：ui.run、主题、窗口、page.render
-  pyproject.toml             # 依赖 cs-ui + flet-video
-  configs/
-    app_config.py            # 业务常量与配置
-    theme.py                 # 设计层：品牌色 → MediaPalette + cs-ui 令牌语义
-  core/
-    models.py                # 数据模型（PlaylistItem、PlayerState、枚举）
-    video_engine.py          # NativeVideo 封装（异步安全、纯映射）
-    player_controller.py     # 状态管理桥接层
-  components/
-    kit.py                   # 产品 UI 词汇层（纯控件工厂）
-    media/
-      backend.py             # 唯一 import flet_video 的地方（原生播放器门面）
-      controls.py            # 无状态控制件（TimeSlider / VolumeControl / SpeedMenu）
-    control_bar.py           # 紧凑控制栏（装配上面那几个控制件）
-    app.py                   # 根组件（键盘、FileDialog、会话恢复）
-    sidebar.py               # 播放列表、文件打开、最近文件、拖拽排序
-    player_area.py           # 视频显示 + 播放事件编排
-    ui_helpers.py            # 旧版兼容层 → kit
-  utils/                     # 纯函数：格式化、持久化、扫描、错误处理
+  main.py                      # 入口：sys.path 引导 → cs_video_player.bootstrap.run()
+  pyproject.toml               # src 布局 + 依赖 cs-ui / flet-video
+  assets/                      # 打包资源（图标等）
+  src/
+    cs_video_player/
+      __init__.py              # 版本号
+      _paths.py                # 资源路径唯一出口（assets_dir / project_root）
+      bootstrap.py             # 启动：日志、主题、窗口、page.render
+      configs/
+        app_config.py          # 业务常量与配置
+        theme.py               # 设计层：品牌色 → MediaPalette + cs-ui 令牌语义
+      core/
+        models.py              # 数据模型（PlaylistItem、PlayerState、枚举）
+        video_engine.py        # NativeVideo 封装（异步安全、纯映射）
+        player_controller.py   # 状态管理桥接层
+      components/
+        kit.py                 # 产品 UI 词汇层（纯控件工厂）
+        media/
+          backend.py           # 唯一 import flet_video 的地方（原生播放器门面）
+          controls.py          # 无状态控制件（TimeSlider / VolumeControl / SpeedMenu）
+        control_bar.py         # 紧凑控制栏（装配上面那几个控制件）
+        app.py                 # 根组件（键盘、FileDialog、会话恢复）
+        sidebar.py             # 播放列表、文件打开、最近文件、拖拽排序
+        player_area.py         # 视频显示 + 播放事件编排
+        ui_helpers.py          # 旧版兼容层 → kit
+      utils/                   # 纯函数：格式化、持久化、扫描、错误处理
   scripts/
-    test_logic.py            # 纯逻辑回归（21 项，无需窗口）
-    verify_app.py            # 隐藏窗口渲染冒烟 + 可选截图
+    test_logic.py              # 纯逻辑回归（21 项，无需窗口）
+    verify_app.py              # 隐藏窗口渲染冒烟 + 可选截图
 ```
+
+采样 **src 布局**：包实体在 `src/cs_video_player/` 下，仓库根只留入口与配置。
+好处是 `python main.py`（源码直跑）、`pip install -e .`（可编辑安装）、隔离打包
+三种情形用的是同一份模块路径，不会出现「本地能跑、装完就找不到包」的分裂。
 
 `kit.py` 是唯一把 cs-ui 控件装配成本产品语汇的地方；视图只描述结构与文案，
 不写颜色、字号或圆角。`components/media/` 是视频能力的边界：往上是纯控件树，
@@ -68,13 +78,14 @@ cs-video-player/
 
 ```bash
 pip install .          # 自动带入 cs-ui（>=0.2.0）与 flet-video（1.1.x）
-pip install -e .       # 开发模式
+pip install -e .       # 开发模式：装的是 src/cs_video_player，改代码即时生效
 ```
 
 ## 使用
 
 ```bash
-python main.py
+python main.py         # 源码直跑（入口自动把 src 挂上 sys.path）
+cs-video-player        # 安装后的命令行入口，指向同一个 run()
 ```
 
 ### 键盘快捷键
@@ -98,8 +109,9 @@ python main.py
 ## 设计与验证
 
 设计层是**可复算**的：唯一的自选色 `BRAND_PRIMARY` 交给
-`configs.theme.MediaPalette.derive(brand, mode="dark")`，算出的色表同时下发给
-页面主题、自绘控制栏和原生全屏控件。`configs.theme.palette_snapshot()` 可打印
+`cs_video_player.configs.theme.MediaPalette.derive(brand, mode="dark")`，算出的色表
+同时下发给页面主题、自绘控制栏和原生全屏控件。
+`cs_video_player.configs.theme.palette_snapshot()` 可打印
 整张表，ui-mcp 索引里可查到 cs-ui 所有公共组件的签名。
 
 ```bash
@@ -115,19 +127,20 @@ python scripts/verify_app.py --demo --shot output/app_with_list.png
 
 - **Python 3.12+**
 - **cs-ui ≥ 0.2.0** — 基于 Flet 1.1.2 的组件库：控件、设计令牌、hooks
-- **flet-video 1.1.x** — 原生播放后端，只经 `components/media/backend.py` 接入
+- **flet-video 1.1.x** — 原生播放后端，只经 `src/cs_video_player/components/media/backend.py` 接入
 - **`@ui.component` hooks** — 声明式状态、排序结果 memo、副作用清理
-- **设计令牌** — `ui.core.tokens` + `configs.theme.MediaPalette`（算出来的配色、4px 网格、排印律）
+- **src 布局** — `package-dir = src`，开发 / editable 安装 / 打包共用一条模块路径
+- **设计令牌** — `ui.core.tokens` + `cs_video_player.configs.theme.MediaPalette`（算出来的配色、4px 网格、排印律）
 - **面向对象设计** — 控制器 / 引擎 / 模型分层，UI 是状态的纯投影
 - **状态驱动 UI** — `PlayerState` 作为唯一数据源，通过监听回调实现响应式更新
 
 ## 架构
 
 ```
-                    ┌──────────────────┐
-                    │   main.py        │
-                    │ (ui.run / 主题)   │
-                    └────────┬─────────┘
+                    ┌──────────────────────┐
+                    │ main.py → bootstrap   │
+                    │ (ui.run / 主题)       │
+                    └──────────┬───────────┘
                              │
                     ┌────────▼─────────┐
                     │   App 组件        │

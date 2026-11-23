@@ -21,8 +21,8 @@ from typing import Callable, Optional
 import ui
 from ui import Button, Icons, Message, StyleType
 
-from components.media import IconAction
-from configs.theme import (
+from cs_video_player.components.media import IconAction
+from cs_video_player.configs.theme import (
     C_BG_ACTIVE,
     C_BG_HOVER,
     C_BG_PANEL,

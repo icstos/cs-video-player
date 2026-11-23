@@ -17,11 +17,11 @@ import logging
 from typing import Callable, Optional
 
 import ui
-from components.media import NativeVideo, PlaylistMode, VideoMedia, desktop_controls
+from cs_video_player.components.media import NativeVideo, PlaylistMode, VideoMedia, desktop_controls
 
-from configs.theme import PALETTE
-from core.models import PlayMode, PlaylistItem
-from utils.formatters import to_uri
+from cs_video_player.configs.theme import PALETTE
+from cs_video_player.core.models import PlayMode, PlaylistItem
+from cs_video_player.utils.formatters import to_uri
 
 logger = logging.getLogger(__name__)
 

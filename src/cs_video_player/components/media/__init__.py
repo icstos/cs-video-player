@@ -12,7 +12,7 @@ cs-ui 只做通用 UI；视频播放器要接管时间轴、音量、全屏与�
 消费它。于是「换品牌色」仍然只改 :data:`configs.theme.BRAND_PRIMARY` 一处。
 """
 
-from components.media.backend import (
+from cs_video_player.components.media.backend import (
     MaterialDesktopVideoControls,
     NativeVideo,
     PlaylistMode,
@@ -20,7 +20,7 @@ from components.media.backend import (
     VideoMedia,
     desktop_controls,
 )
-from components.media.controls import (
+from cs_video_player.components.media.controls import (
     BAR_PADDING,
     VOLUME_SLIDER_WIDTH,
     IconAction,
