@@ -16,13 +16,13 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import ui
 from ui import Button, Icons, Message, StyleType
 
-from cs_video_player.components.media import IconAction
-from cs_video_player.configs.theme import (
+from cs_video_player.view.widgets import IconAction
+from cs_video_player.view.theme import (
     C_BG_ACTIVE,
     C_BG_HOVER,
     C_BG_PANEL,
@@ -91,17 +91,17 @@ def text(
     )
 
 
-def title(value: str, **kwargs) -> ui.Text:
+def title(value: str, **kwargs: Any) -> ui.Text:
     """区块标题：14 / w700。"""
     return text(value, size=FONT_SIZE_TITLE, weight=ui.FontWeight.W_700, **kwargs)
 
 
-def muted(value: str, *, size: int = FONT_SIZE_TINY, **kwargs) -> ui.Text:
+def muted(value: str, *, size: int = FONT_SIZE_TINY, **kwargs: Any) -> ui.Text:
     """次级信息：时间、大小、计数。"""
     return text(value, size=size, color=C_TEXT_SUB, **kwargs)
 
 
-def caption(value: str, **kwargs) -> ui.Text:
+def caption(value: str, **kwargs: Any) -> ui.Text:
     """辅助说明：与正文同级、次级色。"""
     return text(value, size=FONT_SIZE_BODY, color=C_TEXT_SUB, **kwargs)
 
@@ -119,7 +119,7 @@ def panel(
     expand: bool | int | None = None,
     bgcolor: str = C_BG_PANEL,
     border: Optional[ui.Border] = None,
-    padding=None,
+    padding: ui.Padding | float | None = None,
     visible: bool = True,
 ) -> ui.Container:
     """面板外壳：统一底色、圆角与可选边框。"""
@@ -144,7 +144,7 @@ def clickable(
     on_click: Callable | None = None,
     on_hover: Callable | None = None,
     bgcolor: str | None = None,
-    padding=None,
+    padding: ui.Padding | float | None = None,
     radius: float = RADIUS_SM,
     visible: bool = True,
 ) -> ui.Container:
@@ -178,7 +178,7 @@ def hairline(*, vertical: bool = False, color: str = C_DIVIDER) -> ui.Container:
 
 
 def icon_action(
-    icon,
+    icon: object,
     on_click: Callable | None = None,
     *,
     tooltip: str = "",
@@ -200,9 +200,9 @@ def icon_action(
 
 def action_button(
     label: str,
-    on_click: Callable,
+    on_click: Callable[[], None] | Callable[[object], None],
     *,
-    icon=None,
+    icon: object = None,
     primary: bool = True,
 ) -> Button:
     """空态 / 对话框里的实心主操作。"""
@@ -217,7 +217,7 @@ def action_button(
 def popup_item(
     label: str,
     *,
-    icon=None,
+    icon: object = None,
     on_click: Callable | None = None,
     color: str = C_TEXT,
     disabled: bool = False,

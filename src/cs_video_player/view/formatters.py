@@ -1,4 +1,4 @@
-"""时间、大小与事件数据格式化 —— 纯函数层，不依赖页面与状态。
+"""view / formatters —— 控件值格式化与平台事件解析。
 
 时间格式在本模块定义（而不是转手 cs-ui）：控制栏读数、拖动浮标、时长标签
 必须走**同一个**函数，否则同一段视频会出现两套舍入规则。这里的实现是纯整数
@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import ui
@@ -21,7 +20,7 @@ __all__ = [
     "parse_ms",
     "safe_float",
     "safe_int",
-    "to_uri",
+    "slider_position",
     "volume_after_wheel",
 ]
 
@@ -53,11 +52,6 @@ def human_size(value: int | float | None) -> str:
             return f"{int(size)} B" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} PB"
-
-
-def to_uri(path: str) -> str:
-    """将本地路径转换成 file URI（交给 flet-video 的播放列表）。"""
-    return Path(path).expanduser().resolve().as_uri()
 
 
 def _duration_dict_to_ms(value: dict[str, Any]) -> int:

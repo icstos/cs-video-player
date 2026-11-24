@@ -1,11 +1,11 @@
-"""启动入口 —— 装日志、配窗口、挂根组件。
+"""启动入口 —— 组合根（Composition Root）+ 窗口装配。
 
-文件名固定为 ``bootstrap``：``pyproject.toml`` 的 console script 与根目录
-``main.py`` 都指向 :func:`run`，仓库里因此只有一条启动路径。
+依赖只在这里装配：Infra 实现 → Service → ViewModel → View。除本文件外，
+任何层都不 new 下层具体实现，因此替换存储 / 播放器 / 扫描器只需改这一处，
+验证脚本也能注入测试替身而不碰用户数据。
 
-主题只有 cs-ui 一个事实源：这里告诉它「品牌色 + 固定深色」，
-:func:`ui.apply_theme` 一次性下发明暗两套主题，组件里的角色色由 Flutter 解析。
-自绘部分读同一个 :data:`cs_video_player.configs.theme.PALETTE`，因此不会出现两种蓝。
+文件名固定为 ``bootstrap``：console script 与根目录 ``main.py`` 都指向
+:func:`run`，仓库里只有一条启动路径。
 """
 
 from __future__ import annotations
@@ -14,23 +14,25 @@ import asyncio
 import logging
 import sys
 import traceback
+from typing import Any
 
 import ui
 
 from cs_video_player._paths import assets_dir
-from cs_video_player.components.app import App
-from cs_video_player.configs.app_config import (
+from cs_video_player.infra import MediaController, PreferencesPort, ScannerPort
+from cs_video_player.infra import JsonPreferences, FileSystemScanner
+from cs_video_player.models.config import (
     APP_NAME,
     WINDOW_DEFAULT_HEIGHT,
     WINDOW_DEFAULT_WIDTH,
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
-from cs_video_player.configs.theme import BRAND_PRIMARY, THEME_MODE
-from cs_video_player.core.player_controller import PlayerController
-from cs_video_player.utils.error_handler import handle_error
+from cs_video_player.service import PlaybackService
+from cs_video_player.view import App
+from cs_video_player.view.theme import BRAND_PRIMARY, THEME_MODE
+from cs_video_player.viewmodel import AppViewModel
 
-# ─── 日志：必须在 ui.run 之前装好，框架日志才会一起进 handler ───
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -40,7 +42,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _global_excepthook(exc_type, exc_value, exc_tb) -> None:
+def _global_excepthook(
+    exc_type: type[BaseException], exc_value: BaseException, exc_tb: Any
+) -> None:
     """全局未捕获异常：记录日志，不崩溃。"""
     if issubclass(exc_type, KeyboardInterrupt):
         sys.exit(0)
@@ -52,7 +56,7 @@ def _global_excepthook(exc_type, exc_value, exc_tb) -> None:
     )
 
 
-def _async_exception_handler(loop, context) -> None:
+def _async_exception_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
     """asyncio 未处理异常：记录日志，不崩溃。"""
     exc = context.get("exception")
     msg = context.get("message", "异步任务异常")
@@ -70,8 +74,23 @@ def _async_exception_handler(loop, context) -> None:
 sys.excepthook = _global_excepthook
 
 
+def build_viewmodel(
+    *,
+    preferences: PreferencesPort | None = None,
+    scanner: ScannerPort | None = None,
+    media: MediaController | None = None,
+) -> AppViewModel:
+    """依赖注入唯一出口：端口实现 → 业务服务 → 视图模型。"""
+    service = PlaybackService(
+        media=media or MediaController(),
+        preferences=preferences or JsonPreferences(),
+        scanner=scanner or FileSystemScanner(),
+    )
+    return AppViewModel(service)
+
+
 def configure_page(page: ui.Page) -> None:
-    """窗口、主题、标题一次性配好；组件不直接改 page 属性。"""
+    """窗口、主题、标题一次性配好；组件不直接改窗口属性。"""
     page.title = APP_NAME
     page.padding = 0
 
@@ -90,21 +109,18 @@ def configure_page(page: ui.Page) -> None:
 
 
 async def main(page: ui.Page) -> None:
-    """应用入口：装配 → 配置 → 渲染。"""
-    # 异常钩子要装在事件循环内，才管得到 asyncio 任务的未捕获异常。
+    """应用入口：异常钩子 → 配置 → 装配 → 渲染。"""
     asyncio.get_running_loop().set_exception_handler(_async_exception_handler)
-
     configure_page(page)
     await page.window.center()
 
     try:
-        controller = PlayerController()
-        controller.load_settings()
+        vm = build_viewmodel()
     except Exception as exc:
-        handle_error(exc, page=page, context="初始化播放控制器")
+        logger.exception("装配应用失败: %s", exc)
         raise
 
-    page.render(App, controller=controller)
+    page.render(App, vm=vm)
     logger.info(
         "窗口已就绪（%dx%d，flet %s）",
         WINDOW_DEFAULT_WIDTH,
@@ -114,8 +130,8 @@ async def main(page: ui.Page) -> None:
 
 
 def run() -> None:
-    """启动应用。根目录 ``main.py`` 与 console script 共用这一个入口。"""
+    """启动应用（根目录 main.py 与 console script 共用）。"""
     ui.run(main, assets_dir=str(assets_dir()))
 
 
-__all__ = ["configure_page", "main", "run"]
+__all__ = ["build_viewmodel", "configure_page", "main", "run"]

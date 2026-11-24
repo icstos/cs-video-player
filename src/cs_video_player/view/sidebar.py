@@ -15,8 +15,23 @@ from typing import Callable, List, Sequence
 
 import ui
 
-from cs_video_player.configs.app_config import SIDEBAR_DEFAULT_WIDTH
-from cs_video_player.configs.theme import (
+from cs_video_player.models.config import SIDEBAR_DEFAULT_WIDTH
+from cs_video_player.models.entities import PlaylistItem
+from cs_video_player.models.enums import SortKey
+from cs_video_player.view.kit import (
+    ROW_BG,
+    ROW_PADDING,
+    clickable,
+    empty_list,
+    hairline,
+    icon_action,
+    muted,
+    popup_item,
+    section_label,
+    text,
+    title,
+)
+from cs_video_player.view.theme import (
     C_BG_PANEL,
     C_BORDER,
     C_DIVIDER,
@@ -36,21 +51,7 @@ from cs_video_player.configs.theme import (
     SPACING_MD,
     SPACING_SM,
 )
-from cs_video_player.core.models import PlaylistItem, SortKey
-from cs_video_player.utils.formatters import human_size
-from cs_video_player.components.kit import (
-    ROW_BG,
-    ROW_PADDING,
-    clickable,
-    empty_list,
-    hairline,
-    icon_action,
-    muted,
-    popup_item,
-    section_label,
-    text,
-    title,
-)
+from cs_video_player.view.formatters import human_size
 
 #: 排序条顺序固定，与 SortKey 的四种取值一一对应。
 SORT_ORDER: tuple[SortKey, ...] = (
@@ -79,7 +80,7 @@ def Sidebar(
     on_toggle_visible: Callable,
     sidebar_visible: bool = True,
     sidebar_width: float = SIDEBAR_DEFAULT_WIDTH,
-):
+) -> ui.Container:
     """侧边栏组件（签名与根组件保持一致）。"""
     hovered_seq, set_hovered_seq = ui.use_state(-1)
 
@@ -103,7 +104,9 @@ def Sidebar(
     )
 
     # ─── 文件入口 ───
-    def _menu_row(icon, label: str, on_click: Callable) -> ui.Control:
+    def _menu_row(
+        icon: object, label: str, on_click: Callable[[object], None] | Callable[[], None]
+    ) -> ui.Control:
         return clickable(
             ui.Row(
                 controls=[
@@ -274,7 +277,7 @@ def Sidebar(
             ),
         )
 
-        def _on_accept(e: ui.DragTargetEvent):
+        def _on_accept(e: ui.DragTargetEvent) -> None:
             src = e.src
             if src is not None and src.data is not None:
                 src_idx = int(src.data)

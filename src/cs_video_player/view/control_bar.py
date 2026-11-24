@@ -24,8 +24,11 @@ from typing import Callable
 
 import ui
 
-from cs_video_player.configs.app_config import PLAYBACK_SPEEDS
-from cs_video_player.configs.theme import (
+from cs_video_player.models.config import PLAYBACK_SPEEDS
+from cs_video_player.models.enums import PlayMode
+from cs_video_player.models.state import AppState
+from cs_video_player.view.kit import icon_action, muted
+from cs_video_player.view.theme import (
     C_BG_PANEL,
     C_DIVIDER,
     C_PRIMARY,
@@ -36,9 +39,7 @@ from cs_video_player.configs.theme import (
     PALETTE,
     SPACING_SM,
 )
-from cs_video_player.core.models import PlayMode, PlayerState
-from cs_video_player.components.kit import icon_action, muted
-from cs_video_player.components.media import BAR_PADDING, SpeedMenu, TimeSlider, VolumeControl
+from cs_video_player.view.widgets import BAR_PADDING, SpeedMenu, TimeSlider, VolumeControl
 
 #: 播放模式 → (图标, tooltip)。数据与视图分离，快捷键提示也可复用这张表。
 PLAY_MODE_STYLE: dict[PlayMode, tuple[object, str]] = {
@@ -53,7 +54,7 @@ PLAY_MODE_STYLE: dict[PlayMode, tuple[object, str]] = {
 class ControlsView:
     """控制栏渲染所需的全部值（一次渲染一份快照）。"""
 
-    state: PlayerState
+    state: AppState
     is_playing: bool
     position_ms: int
     duration_ms: int
@@ -93,7 +94,15 @@ def build_control_bar(
         state.play_mode, PLAY_MODE_STYLE[PlayMode.SEQUENCE]
     )
 
-    def _btn(icon, on_click, tooltip="", *, enabled=True, color=None, size=ICON_SIZE_MD):
+    def _btn(
+        icon: object,
+        on_click: Callable[[object], None] | Callable[[], None],
+        tooltip: str = "",
+        *,
+        enabled: bool = True,
+        color: str | None = None,
+        size: int = ICON_SIZE_MD,
+    ) -> ui.IconButton:
         return icon_action(
             icon, on_click, tooltip=tooltip, disabled=not enabled,
             color=color, size=size,

@@ -1,11 +1,12 @@
-"""隐藏窗口冒烟 —— 真实渲染整棵 App 组件树，抓构建期异常。
+"""隐藏窗口冒烟 —— 真实渲染 App 组件树，抓构建期异常。
 
-``python scripts/verify_app.py`` 会开一个不可见的 Flet 窗口，把真正的
-``PlayerController`` 与 ``App`` 挂上去，等一秒让 use_effect / 子组件全部执行完，
-再关窗。纯逻辑由 ``test_logic.py`` 覆盖，这里只回答「界面能不能构建出来」。
+``python scripts/verify_app.py`` 开一个不可见 Flet 窗口，装配真实的五层对象，
+等组件 effect 全部执行完再关窗。纯逻辑由 ``test_logic.py`` 覆盖，分层约束由
+``check_architecture.py`` 覆盖，这里只回答「界面能不能构建出来」。
 
-测试替身：会话恢复 / 设置与会话落盘在验证期间是 no-op，既不弹窗干扰，
-也不改动用户 ``~/.cs_video_player`` 里的真实数据。
+测试替身通过组合根注入：设置 / 会话 / 近期记录落在临时目录，不碰用户数据。
+``--demo`` 会创建几个临时视频占位文件并走完整的文件导入路径，用来验收列表行、
+选中态与排序条。``--shot`` 可导出界面截图。
 
 输出里的 ``VERIFY_OK`` / ``VERIFY_FAIL`` 是给 CI 用的稳定标记。
 """
@@ -15,23 +16,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import tempfile
 from pathlib import Path
 
-# src 布局：项目包在 src/ 下，脚本在仓库根的 scripts/ 下。
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-#: ``python scripts/verify_app.py --shot output/app.png`` 额外导出一张界面截图。
-#: ``--demo`` 会注入几条假播放列表项，用来验收列表行、选中态与排序条。
 SHOT: str = ""
 DEMO: bool = False
 
 import ui  # noqa: E402
 
 from cs_video_player._paths import assets_dir, project_root  # noqa: E402
-from cs_video_player.bootstrap import configure_page  # noqa: E402
-from cs_video_player.components.app import App  # noqa: E402
-from cs_video_player.core.player_controller import PlayerController  # noqa: E402
+from cs_video_player.bootstrap import build_viewmodel, configure_page  # noqa: E402
+from cs_video_player.infra import FileSystemScanner, JsonPreferences  # noqa: E402
+from cs_video_player.view import App  # noqa: E402
 
 _PROBLEMS: list[str] = []
 
@@ -45,48 +44,31 @@ class _Collector(logging.Handler):
 
 
 async def _run(page: ui.Page) -> None:
-    # 不碰真实用户数据
-    PlayerController.get_saved_session = lambda self: None
-    PlayerController.save_settings = lambda self: None
-    PlayerController.save_session = lambda self: None
-
     try:
+        root = Path(tempfile.mkdtemp(prefix="cvp-verify-"))
+        preferences = JsonPreferences(root=root)
+        vm = build_viewmodel(preferences=preferences, scanner=FileSystemScanner())
+
         configure_page(page)
-        controller = PlayerController()
-        controller.load_settings()
         if DEMO:
-            from datetime import datetime
-
-            from cs_video_player.core.models import PlaylistItem
-
-            controller.state.playlist = [
-                PlaylistItem(
-                    path=f"D:/media/{name}",
-                    title=name,
-                    size=size,
-                    modified=datetime(2026, 11, 10 + i),
-                )
-                for i, (name, size) in enumerate(
-                    (
-                        ("星际穿越.2014.mkv", 8_932_000_000),
-                        ("纪录短片 · 城市晨光.mp4", 246_000_000),
-                        ("会议回放 2026-11-12.mov", 1_504_000_000),
-                        ("演示片段.webm", 18_400_000),
-                    )
-                )
-            ]
-            controller.state.current_index = 0
-        page.render(App, controller=controller)
+            names = (
+                "星际穿越.2014.mkv",
+                "纪录短片 · 城市晨光.mp4",
+                "会议回放 2026-11-12.mov",
+                "演示片段.webm",
+            )
+            paths: tuple[str, ...] = tuple(
+                str((root / name).touch() or (root / name)) for name in names
+            )
+            vm.on_files_selected(paths)
+        page.render(App, vm=vm)
         page.update()
         await asyncio.sleep(1.2)
 
-        # page.controls 在 page.render 后是组件占位（不是列表），只看有没有挂上。
         has_root = getattr(page, "controls", None) is not None
-        # Flet 1.1 的 Service 自动注册进 page._services 注册表，而不是旧的
-        # page.services 列表；真正决定「能不能弹框」的是 service 是否挂到 page。
         registry = getattr(page, "_services", None)
         registered = [
-            type(s).__name__ for s in (getattr(registry, "_services", []) or [])
+            type(service).__name__ for service in (getattr(registry, "_services", []) or [])
         ]
         probe = ui.FileDialog()
         try:
@@ -119,13 +101,12 @@ async def _run(page: ui.Page) -> None:
     except Exception as exc:  # noqa: BLE001
         _PROBLEMS.append(f"渲染异常: {type(exc).__name__}: {exc}")
         import traceback
+
         traceback.print_exc()
     finally:
         print("VERIFY_OK" if not _PROBLEMS else "VERIFY_FAIL")
         for problem in _PROBLEMS:
             print("VERIFY_PROBLEM", problem)
-        # 关窗后留一拍：flet 的 destroy 是异步下发的，紧接着回收 session 会
-        # 撞上 "Session closed"，日志里多一段无意义的 traceback。
         try:
             await page.window.close()
             await asyncio.sleep(0.3)

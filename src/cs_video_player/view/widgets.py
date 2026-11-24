@@ -19,8 +19,8 @@ from collections.abc import Callable, Sequence
 import ui
 from ui.core.tokens import FONT_SIZE, FONT_WEIGHT, ICON_SIZE, SPACE
 
-from cs_video_player.configs.theme import MediaPalette, PALETTE
-from cs_video_player.utils.formatters import fmt_rate, fmt_time
+from cs_video_player.view.theme import MediaPalette, PALETTE
+from cs_video_player.view.formatters import fmt_rate, fmt_time
 
 __all__ = [
     "BAR_PADDING",
@@ -47,7 +47,7 @@ def _palette(palette: MediaPalette | None) -> MediaPalette:
 
 
 def IconAction(
-    icon,
+    icon: object,
     on_click: Callable | None = None,
     *,
     tooltip: str = "",
