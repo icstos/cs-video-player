@@ -129,10 +129,18 @@ def App(vm: AppViewModel) -> ui.Control:
     def _setup_window_close() -> None:
         page.window.prevent_close = True
 
+        async def _destroy() -> None:
+            try:
+                await page.window.destroy()
+            except RuntimeError as exc:
+                # 关窗时会话可能先被回收，这类噪音不影响落盘与退出。
+                if "session closed" not in str(exc).lower():
+                    raise
+
         def _on_window_event(e: ui.WindowEvent) -> None:
             if e.type == ui.WindowEventType.CLOSE:
                 vm.on_window_close()
-                asyncio.ensure_future(page.window.destroy())
+                asyncio.ensure_future(_destroy())
 
         page.window.on_event = _on_window_event
 

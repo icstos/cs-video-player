@@ -407,9 +407,19 @@ class PlaybackService:
 
         这样「什么时候该播」是业务状态（nonce）的事，「怎么播」是端口的事，
         View 不需要自己监听 nonce 也不需要认识播放器。
+
+        目标是**原生**列表下标：单曲循环只投影一条，必须用 :attr:`native_index`；
+        原生投影尚未生成时跳过本次起播，不让底层抛越界错误。
         """
-        if self._state.has_media:
-            await self._media.play_at(self._state.current_index)
+        index = self._state.native_index
+        if not self._state.has_media or not 0 <= index < len(self._state.native_playlist):
+            logger.debug(
+                "原生播放列表尚未就绪，跳过起播 index=%s size=%s",
+                index,
+                len(self._state.native_playlist),
+            )
+            return
+        await self._media.play_at(index, self._state.native_playlist)
 
     def play_at(self, index: int) -> None:
         """跳到指定项；状态与 nonce 更新后由 auto_play 统一起播。"""

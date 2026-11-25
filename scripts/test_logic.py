@@ -7,6 +7,7 @@ UI 构建期的问题由 ``verify_app.py`` 负责；分层约束由 ``check_arch
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ import ui  # noqa: E402
 
 from cs_video_player.infra import FileSystemScanner, JsonPreferences, MediaController  # noqa: E402
 from cs_video_player.models import (  # noqa: E402
+    MediaTrack,
     PlayMode,
     PlaybackState,
     PlaylistItem,
@@ -55,6 +57,18 @@ def _items(n: int = 3) -> tuple[PlaylistItem, ...]:
         )
         for i in range(n)
     )
+
+
+class _RecordingControl:
+    """最小播放器替身：只记录收到的起播下标。"""
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+        self.track_counts: list[int] = []
+
+    async def play_at(self, index: int, tracks: tuple[MediaTrack, ...]) -> None:
+        self.calls.append(index)
+        self.track_counts.append(len(tracks))
 
 
 def _service() -> PlaybackService:
@@ -122,6 +136,7 @@ class FormattingTest(unittest.TestCase):
         self.assertIn("编码", rules.classify_error("Unsupported codec h266"))
         self.assertIn("不存在", rules.classify_error(FileNotFoundError("no such file")))
         self.assertIn("播放出错", rules.classify_error("something odd"))
+        self.assertIn("播放列表", rules.classify_error("media_index is out of range"))
 
 
 class RulesTest(unittest.TestCase):
@@ -234,6 +249,24 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(len(c.state.native_playlist), 1)
         self.assertIn("v1.mp4", c.state.native_playlist[0].uri)
 
+    def test_auto_play_uses_native_index(self):
+        """单曲循环/单曲重播时原生列表只有一条，起播不能传业务索引。"""
+        c = self.service
+        control = _RecordingControl()
+        c.bind_media(control)
+        c.play_at(2)
+        c.set_play_mode(PlayMode.REPEAT_ONE)
+        asyncio.run(c.auto_play())
+        self.assertEqual(control.calls, [0])
+        self.assertEqual(control.track_counts, [1])
+        c.on_complete()
+        asyncio.run(c.auto_play())
+        self.assertEqual(control.calls, [0, 0])
+        c.set_play_mode(PlayMode.SEQUENCE)
+        asyncio.run(c.auto_play())
+        self.assertEqual(control.calls, [0, 0, 2])
+        self.assertEqual(c.state.last_error, "")
+
 
 class DesignTest(unittest.TestCase):
     def test_palette_is_recomputable(self):
@@ -261,6 +294,12 @@ class DesignTest(unittest.TestCase):
         self.assertEqual(s.current_item.title, "视频 1")  # type: ignore[union-attr]
         s = PlaybackState(playlist=_items(), duration_ms=1000, position_ms=250)
         self.assertAlmostEqual(s.progress, 0.25)
+        s = PlaybackState(playlist=_items(), current_index=2)
+        self.assertEqual(s.native_index, 2)
+        s = PlaybackState(
+            playlist=_items(), current_index=2, play_mode=PlayMode.REPEAT_ONE
+        )
+        self.assertEqual(s.native_index, 0)
 
 
 if __name__ == "__main__":

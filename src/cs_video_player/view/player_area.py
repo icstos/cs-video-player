@@ -59,35 +59,26 @@ def PlayerArea(state: AppState, vm: AppViewModel) -> ui.Control:
         if state.is_fullscreen:
             vm.on_fullscreen_event(False)
 
-    # 原生控件只在「真正影响它的字段」变化时重建：位置轮询不触发视频重载。
-    # 回调闭包只持有 ViewModel 引用，memo 复用首帧闭包不会拿到过期状态。
-    video = ui.use_memo(
-        lambda: handle.build(
-            tracks=state.native_playlist,
-            mode=state.native_mode,
-            callbacks=VideoCallbacks(
-                on_load=_on_load,
-                on_track_change=_on_track_change,
-                on_complete=_on_complete,
-                on_position=_on_position,
-                on_duration=_on_duration,
-                on_enter_fullscreen=_on_enter_fs,
-                on_exit_fullscreen=_on_exit_fs,
-            ),
-            fullscreen=state.is_fullscreen,
-            volume=state.volume,
-            playback_rate=state.playback_rate,
-            muted=state.muted,
-            fill_color=C_BG_DARKEST,
+    # 每帧都构造新的 Video 描述：Flet 按控件 ID 就地差分，播放器不会重载。
+    # 不能把控件对象放进 use_memo —— 重渲染会丢弃缓存实例，ref 就会指向未被
+    # 挂载的控件，所有播放器命令都会报「Control must be added to the page」。
+    video = handle.build(
+        tracks=state.native_playlist,
+        mode=state.native_mode,
+        callbacks=VideoCallbacks(
+            on_load=_on_load,
+            on_track_change=_on_track_change,
+            on_complete=_on_complete,
+            on_position=_on_position,
+            on_duration=_on_duration,
+            on_enter_fullscreen=_on_enter_fs,
+            on_exit_fullscreen=_on_exit_fs,
         ),
-        [
-            state.native_playlist,
-            state.native_mode,
-            state.is_fullscreen,
-            state.volume,
-            state.playback_rate,
-            state.muted,
-        ],
+        fullscreen=state.is_fullscreen,
+        volume=state.volume,
+        playback_rate=state.playback_rate,
+        muted=state.muted,
+        fill_color=C_BG_DARKEST,
     )
 
     def _on_seek_start(e: Any) -> None:

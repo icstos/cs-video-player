@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import flet_video as fv
@@ -38,6 +38,15 @@ class VideoCallbacks:
     on_duration: Callable[[Event], None]
     on_enter_fullscreen: Callable[[Event], None]
     on_exit_fullscreen: Callable[[Event], None]
+
+
+def native_mode(mode: ListMode) -> fv.PlaylistMode:
+    """业务投影模式 → flet_video 的播放列表模式。"""
+    return {
+        ListMode.NONE: fv.PlaylistMode.NONE,
+        ListMode.SINGLE: fv.PlaylistMode.SINGLE,
+        ListMode.LOOP: fv.PlaylistMode.LOOP,
+    }[mode]
 
 
 def fullscreen_controls() -> fv.MaterialDesktopVideoControls:
@@ -75,16 +84,16 @@ class VideoHandle:
         muted: bool,
         fill_color: str,
     ) -> fv.Video:
-        """构造一帧原生播放器控件；ref 跨帧稳定，属性由状态派生。"""
-        native_mode = {
-            ListMode.NONE: fv.PlaylistMode.NONE,
-            ListMode.SINGLE: fv.PlaylistMode.SINGLE,
-            ListMode.LOOP: fv.PlaylistMode.LOOP,
-        }[mode]
+        """构造一帧原生播放器描述；ref 跨帧由 Flet 指向已挂载实例。
+
+        View 每帧都调用本方法，由 Flet 按控件 ID 就地差分，播放器不会重载。
+        切勿把返回的控件对象缓存进 ``use_memo``：重渲染丢弃缓存实例后 ref
+        会指向未挂载控件，播放器命令将全部失效。
+        """
         return fv.Video(
             ref=self.ref,
             playlist=[fv.VideoMedia(resource=track.uri) for track in tracks],
-            playlist_mode=native_mode,
+            playlist_mode=native_mode(mode),
             controls={
                 fv.VideoControlsMode.NORMAL: None,
                 fv.VideoControlsMode.FULLSCREEN: fullscreen_controls(),
@@ -169,8 +178,10 @@ class VideoHandle:
 
     async def jump_to(self, index: int) -> None:
         video = self.ref.current
-        if video is not None:
-            await video.jump_to(index)
+        expected = tuple(
+            getattr(media, "resource", "") for media in (video.playlist or ())
+        ) if video is not None else ()
+        await self._wait_and(index, expected, lambda v: v.jump_to(index), "jump_to")
 
     async def next(self) -> None:
         video = self.ref.current
@@ -182,27 +193,55 @@ class VideoHandle:
         if video is not None:
             await video.previous()
 
-    async def play_at(self, index: int) -> None:
-        """控件挂载是异步的：首帧 / 会话恢复时重试「尚未挂到页面」类错误。"""
+    async def _wait_and(
+        self,
+        index: int,
+        expected: tuple[str, ...],
+        action: Callable[[fv.Video], Awaitable[None]],
+        label: str,
+    ) -> None:
+        """等控件挂载且播放列表同步到 index 后再执行命令。
+
+        声明式重渲染与异步起播是两个任务：列表刚替换时控件里可能还是旧轨道，
+        直接 ``jump_to`` 会抛 ``media_index is out of range``。这里只做技术性等待，
+        不做任何业务判断（目标下标由 Service 投影后给定）。
+        """
         for attempt in range(20):
             video = self.ref.current
             if video is None:
                 await asyncio.sleep(0.1)
                 continue
+            current = tuple(
+                getattr(media, "resource", "") for media in (video.playlist or ())
+            )
+            if current != expected or not 0 <= index < len(current):
+                await asyncio.sleep(0.1)
+                continue
             try:
-                await video.jump_to(index)
-                await asyncio.sleep(0.05)
-                await video.play()
+                await action(video)
                 return
             except RuntimeError as exc:
                 message = str(exc).lower()
                 if "session closed" in message or "destroyed session" in message:
                     return
+                # 控件已构造但尚未挂到页面时，等下一帧再试。
                 if "added to the page" in message and attempt < 19:
                     await asyncio.sleep(0.1)
                     continue
                 raise
-        logger.warning("播放器未能在 2 秒内挂载到页面")
+        logger.warning("播放器未能在 2 秒内就绪（%s index=%s）", label, index)
+
+    async def play_at(self, index: int, tracks: tuple[MediaTrack, ...]) -> None:
+        """起播携带目标轨道集，等控件投影一致后再跳转，避免越界 / 播错轨道。"""
+
+        async def _jump_then_play(video: fv.Video) -> None:
+            await video.jump_to(index)
+            await asyncio.sleep(0.05)
+            await video.play()
+
+        await self._wait_and(
+            index, tuple(track.uri for track in tracks), _jump_then_play, "play_at"
+        )
 
     async def restore_after_mode_change(
         self, position_ms: int, was_playing: bool

@@ -73,6 +73,15 @@ class PlaybackState:
         return self.has_media
 
     @property
+    def native_index(self) -> int:
+        """业务索引在原生播放列表中的位置。
+
+        单曲循环只投影当前一条轨道，原生索引恒为 0；其余模式与业务索引一致。
+        起播命令必须使用它，直接传 ``current_index`` 会在非首项上越界。
+        """
+        return 0 if self.play_mode == PlayMode.REPEAT_ONE else self.current_index
+
+    @property
     def current_item(self) -> PlaylistItem | None:
         """当前轨道；空列表返回 None。"""
         return self.playlist[self.current_index] if self.has_media else None

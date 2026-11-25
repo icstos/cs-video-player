@@ -151,5 +151,5 @@ python scripts/verify_app.py --demo --shot output/app_with_list.png
 - **cs-ui ≥ 0.2.0** — Flet 1.1.2 之上的控件、设计令牌与组件 hooks
 - **flet-video 1.1.x** — 仅经 `view/native_video.py` 接入
 - **MVVM + 五层** — 单向依赖、边界处用 Protocol
-- **声明式状态** — 冻结 `AppState`，排序与原生播放器子树均做 memo
+- **声明式状态** — 冻结 `AppState`；侧栏/排序做 memo，原生播放器每帧重建描述（由 Flet 按控件 ID 差分，不重载视频）
 - **可复算设计** — 一个品牌色 + cs-ui 令牌，快照便于 Agent 与测试复算

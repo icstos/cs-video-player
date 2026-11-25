@@ -160,5 +160,5 @@ never writes to the user's `~/.cs_video_player`.
 - **cs-ui ≥ 0.2.0** — widgets, design tokens and component hooks on Flet 1.1.2
 - **flet-video 1.1.x** — reached only through `view/native_video.py`
 - **MVVM + five layers** — one-way dependency, protocols at the boundaries
-- **Declarative state** — frozen `AppState`, memoized sorting / native player subtree
+- **Declarative state** — frozen `AppState`; sorting / sidebar memoized, native player rebuilt each frame (Flet reconciles by control ID, no reload)
 - **Recomputable design** — one brand color + cs-ui tokens, snapshots for agents and tests

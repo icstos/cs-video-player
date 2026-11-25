@@ -60,6 +60,10 @@ _ERROR_PATTERNS: tuple[tuple[tuple[str, ...], str], ...] = (
         ("eof", "end of file", "premature"),
         "视频数据不完整，可能已损坏",
     ),
+    (
+        ("out of range", "media_index"),
+        "播放列表尚未就绪，请稍后重试",
+    ),
 )
 
 

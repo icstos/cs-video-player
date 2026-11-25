@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from cs_video_player.infra.ports import ErrorHandler, MediaPort, VideoControl
+from cs_video_player.models.entities import MediaTrack
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +112,8 @@ class MediaController(MediaPort):
     async def previous(self) -> None:
         await self._run("previous", lambda c: c.previous())
 
-    async def play_at(self, index: int) -> None:
-        await self._run("play_at", lambda c: c.play_at(index))
+    async def play_at(self, index: int, tracks: tuple[MediaTrack, ...]) -> None:
+        await self._run("play_at", lambda c: c.play_at(index, tracks))
 
     async def restore_after_mode_change(
         self, position_ms: int, was_playing: bool

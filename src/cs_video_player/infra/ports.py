@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar
 
-from cs_video_player.models.entities import PlaylistItem
+from cs_video_player.models.entities import MediaTrack, PlaylistItem
 
 T = TypeVar("T")
 ErrorHandler = Callable[[str, str], None]  # (label, raw_error)
@@ -41,7 +41,9 @@ class VideoControl(Protocol):
 
     async def previous(self) -> None: ...
 
-    async def play_at(self, index: int) -> None: ...
+    async def play_at(
+        self, index: int, tracks: tuple[MediaTrack, ...]
+    ) -> None: ...
 
     async def restore_after_mode_change(
         self, position_ms: int, was_playing: bool
@@ -90,7 +92,9 @@ class MediaPort(Protocol):
 
     async def previous(self) -> None: ...
 
-    async def play_at(self, index: int) -> None: ...
+    async def play_at(
+        self, index: int, tracks: tuple[MediaTrack, ...]
+    ) -> None: ...
 
     async def restore_after_mode_change(
         self, position_ms: int, was_playing: bool
